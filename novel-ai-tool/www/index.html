@@ -22,6 +22,10 @@
     // 原生壳里 capacitor.js 可能晚于 DOMContentLoaded 注入，故等 DOM 事件后再 boot
     document.addEventListener('DOMContentLoaded', function () {
       var el = document.getElementById('probe');
+      // 页面上看不到的错误也要进 logcat，否则 adb 侧只能看到白屏
+      window.onerror = function (msg, src, line) {
+        console.log('[selfcheck] JS ERROR ' + msg + ' @' + src + ':' + line);
+      };
       function show() {
         var r = window.NOVEL_BOOT.report;
         var lines = [
@@ -33,8 +37,12 @@
           '错误        : ' + (r.error || '（无）')
         ];
         el.textContent = lines.join('\n');
+        console.log('[selfcheck] ' + lines.join(' | '));
       }
-      window.NOVEL_BOOT.boot().then(show, show);
+      window.NOVEL_BOOT.boot().then(show, function (e) {
+        console.log('[selfcheck] boot 抛出异常 ' + (e && e.message ? e.message : e));
+        show();
+      });
     });
   </script>
 </body>

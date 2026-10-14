@@ -1,4 +1,4 @@
-M2 数据层测试  2026-10-14T12:16:22.548Z
+M2 数据层测试  2026-10-14T14:02:03.185Z
 node:sqlite 版本 3.51.3   schema LATEST=v2
 
 PASS  全新库 fromVersion=0 toVersion=2
