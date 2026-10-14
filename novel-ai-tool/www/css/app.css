@@ -1,0 +1,48 @@
+/* 外观基线：CSS 变量驱动，F57「字号/行距/主题/内容宽度」后续只改变量，不重写规则 */
+:root {
+  --bg: #f7f4ee;
+  --fg: #26221c;
+  --muted: #8a8073;
+  --line: #e2dbcd;
+  --accent: #b4623a;
+  --font-size: 17px;
+  --line-height: 1.9;
+  --content-width: 720px;
+}
+
+html[data-theme='light'] { --bg: #ffffff; --fg: #1a1a1a; --muted: #767676; --line: #e6e6e6; }
+html[data-theme='dark']  { --bg: #14161a; --fg: #d8d5cf; --muted: #8b8f98; --line: #2a2e35; --accent: #d68a5f; }
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: var(--font-size);
+  line-height: var(--line-height);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.wrap {
+  max-width: var(--content-width);
+  margin: 0 auto;
+  padding: 16px 16px calc(24px + env(safe-area-inset-bottom));
+}
+
+.ttl { font-size: 1.25em; margin: 0 0 2px; font-weight: 600; }
+.sub { margin: 0 0 14px; color: var(--muted); font-size: .85em; }
+
+pre#probe {
+  margin: 0;
+  padding: 12px 14px;
+  background: #fffdf8;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--fg);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

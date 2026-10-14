@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>AI 写作助手</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <!-- 框架页：只用于验证"壳 + 插件 + 数据层"接通没有。正式界面（书架/编辑器/动作条）待功能清单审核通过后在 M4/M5 落地 -->
+  <main class="wrap">
+    <h1 class="ttl">AI 写作助手</h1>
+    <p class="sub">框架自检（非正式界面）</p>
+    <pre id="probe">loading…</pre>
+  </main>
+
+  <script src="cordova.js"></script>
+  <script src="js/schema.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/boot.js"></script>
+  <script>
+    // 原生壳里 capacitor.js 可能晚于 DOMContentLoaded 注入，故等 DOM 事件后再 boot
+    document.addEventListener('DOMContentLoaded', function () {
+      var el = document.getElementById('probe');
+      function show() {
+        var r = window.NOVEL_BOOT.report;
+        var lines = [
+          '原生壳      : ' + (r.native ? 'ok' : 'browser preview（插件不可用）'),
+          '已注册插件  : ' + (r.plugins.length ? r.plugins.join(', ') : '（无）'),
+          '数据层      : ' + (r.ready
+              ? 'ok  v' + r.dbInfo.fromVersion + ' → v' + r.dbInfo.toVersion + '  FTS=' + r.dbInfo.ftsMode
+              : '未就绪'),
+          '错误        : ' + (r.error || '（无）')
+        ];
+        el.textContent = lines.join('\n');
+      }
+      window.NOVEL_BOOT.boot().then(show, show);
+    });
+  </script>
+</body>
+</html>

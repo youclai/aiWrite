@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">AI 写作助手</string>
+    <string name="title_activity_main">AI 写作助手</string>
+    <string name="package_name">com.novelai.writer</string>
+    <string name="custom_url_scheme">com.novelai.writer</string>
+</resources>

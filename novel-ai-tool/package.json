@@ -1,0 +1,22 @@
+{
+  "name": "novel-ai-writer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "安卓本地 AI 写作助手（Capacitor 单 APK，数据不出机）",
+  "scripts": {
+    "sync": "cap sync android",
+    "build": "cap sync android && cd android && gradlew.bat assembleDebug",
+    "open": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor-community/sqlite": "8.1.1",
+    "@capacitor/android": "8.5.3",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/filesystem": "8.1.4",
+    "@capacitor/preferences": "8.0.1",
+    "@capacitor/share": "8.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3"
+  }
+}
