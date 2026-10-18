@@ -172,6 +172,17 @@
     });
   }
 
+  // 打字自动保存（F54）专用：只更新正文/字数/时间，不生成快照——快照留给采纳/回滚这类内容替换，
+  // 否则每次防抖落盘都脏一条，50 条上限会被打字冲掉、淹没真正的安全网
+  function saveChapterDraft(id, body) {
+    return getRow('chapters', id).then(function (ch) {
+      if (!ch) throw new Error('章节不存在: ' + id);
+      if (ch.body === body) return ch.word_count;    // 未变不写，省一次 IO
+      return run('UPDATE chapters SET body=?, word_count=?, updated_at=? WHERE id=?',
+        [body, countWords(body), now(), id]).then(function () { return countWords(body); });
+    });
+  }
+
   function saveChapterMeta(id, patch) {
     return getRow('chapters', id).then(function (ch) {
       if (!ch) throw new Error('章节不存在: ' + id);
@@ -188,6 +199,62 @@
   }
 
   function deleteChapter(id) { return remove('chapters', id); }
+
+  /* ---------- 节（章的下级写作单元） ---------- */
+
+  var SECTION_FIELDS = ['chapter_id', 'book_id', 'idx', 'title', 'body', 'summary', 'word_count', 'created_at', 'updated_at'];
+
+  function listSections(chapterId) {
+    return all('SELECT id,chapter_id,book_id,idx,title,summary,word_count,updated_at,length(body) AS body_len ' +
+               'FROM sections WHERE chapter_id=? ORDER BY idx', [chapterId]);
+  }
+  function getSection(id) { return getRow('sections', id); }
+
+  function createSection(chapterId, title) {
+    return getRow('chapters', chapterId).then(function (ch) {
+      if (!ch) throw new Error('章节不存在: ' + chapterId);
+      return all('SELECT COALESCE(MAX(idx),0)+1 AS next FROM sections WHERE chapter_id=?', [chapterId]).then(function (r) {
+        return insert('sections', SECTION_FIELDS, {
+          chapter_id: chapterId, book_id: ch.book_id, idx: r[0].next, title: title || '', body: '', summary: '', word_count: 0
+        });
+      });
+    });
+  }
+
+  // 节正文写回：无快照表（FK 只指向 chapters），采纳/回滚留痕仅章级提供；节级只存最新正文
+  function saveSectionBody(id, body) {
+    return getRow('sections', id).then(function (s) {
+      if (!s) throw new Error('节不存在: ' + id);
+      return run('UPDATE sections SET body=?, word_count=?, updated_at=? WHERE id=?',
+        [body, countWords(body), now(), id]).then(function () { return countWords(body); });
+    });
+  }
+
+  function saveSectionDraft(id, body) {
+    return getRow('sections', id).then(function (s) {
+      if (!s) throw new Error('节不存在: ' + id);
+      if (s.body === body) return s.word_count;
+      return run('UPDATE sections SET body=?, word_count=?, updated_at=? WHERE id=?',
+        [body, countWords(body), now(), id]).then(function () { return countWords(body); });
+    });
+  }
+
+  function saveSectionMeta(id, patch) {
+    return getRow('sections', id).then(function (s) {
+      if (!s) throw new Error('节不存在: ' + id);
+      var title = patch.title === undefined ? s.title : patch.title;
+      var summary = patch.summary === undefined ? s.summary : patch.summary;
+      return run('UPDATE sections SET title=?, summary=?, updated_at=? WHERE id=?', [title, summary, now(), id]);
+    });
+  }
+
+  function reorderSections(chapterId, orderedIds) {
+    return Promise.all(orderedIds.map(function (sid, i) {
+      return run('UPDATE sections SET idx=? WHERE id=? AND chapter_id=?', [i + 1, sid, chapterId]);
+    }));
+  }
+
+  function deleteSection(id) { return remove('sections', id); }
 
   /* ---------- 快照与回滚 ---------- */
 
@@ -220,6 +287,18 @@
     return id ? update('characters', id, CHAR_FIELDS.concat(['id']), obj) : insert('characters', CHAR_FIELDS, obj);
   }
   function deleteCharacter(id) { return remove('characters', id); }
+
+  /* ---------- 势力（书内阵营设定） ---------- */
+
+  var FACTION_FIELDS = ['book_id', 'name', 'kind', 'intro', 'created_at', 'updated_at'];
+  function listFactions(bookId) {
+    return all('SELECT * FROM factions WHERE book_id=? ORDER BY name', [bookId]);
+  }
+  function saveFaction(bookId, f, id) {
+    var obj = { book_id: bookId, name: f.name, kind: f.kind || '', intro: f.intro || '' };
+    return id ? update('factions', id, FACTION_FIELDS.concat(['id']), obj) : insert('factions', FACTION_FIELDS, obj);
+  }
+  function deleteFaction(id) { return remove('factions', id); }
 
   /* ---------- 模板 ---------- */
 
@@ -361,10 +440,14 @@
     countWords: countWords,
     listBooks: listBooks, createBook: createBook, updateBook: updateBook, deleteBook: deleteBook,
     listChapters: listChapters, getChapter: getChapter, createChapter: createChapter,
-    saveChapterBody: saveChapterBody, saveChapterMeta: saveChapterMeta,
+    saveChapterBody: saveChapterBody, saveChapterDraft: saveChapterDraft, saveChapterMeta: saveChapterMeta,
     reorderChapters: reorderChapters, deleteChapter: deleteChapter,
+    listSections: listSections, getSection: getSection, createSection: createSection,
+    saveSectionBody: saveSectionBody, saveSectionDraft: saveSectionDraft, saveSectionMeta: saveSectionMeta,
+    reorderSections: reorderSections, deleteSection: deleteSection,
     listSnapshots: listSnapshots, getSnapshot: getSnapshot, rollback: rollback,
     listCharacters: listCharacters, saveCharacter: saveCharacter, deleteCharacter: deleteCharacter,
+    listFactions: listFactions, saveFaction: saveFaction, deleteFaction: deleteFaction,
     listTemplates: listTemplates, saveTemplate: saveTemplate, deleteTemplate: deleteTemplate,
     getSetting: getSetting, setSetting: setSetting,
     startJob: startJob, finishJob: finishJob, listJobs: listJobs,

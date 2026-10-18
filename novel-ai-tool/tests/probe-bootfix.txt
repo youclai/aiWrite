@@ -1,0 +1,1 @@
+﻿{"uv":"[{\"user_version\":0}]","insert":"{\"changes\":1,\"lastId\":1}","read":"[{\"id\":1,\"t\":\"a\"}]","ftsTrigram":"OK"}

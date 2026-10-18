@@ -216,6 +216,26 @@ const BODY_2 = '雨停了两日后再下，刀已经卷口。';
     eq((await DB.listEvents(bookId)).map(e => e.title), ['离乡', '结绳', '重逢']);
   });
 
+  /* === T8.5 势力介绍（迁移 v3 factions） === */
+  const fid = await DB.saveFaction(bookId, { name: '玄天剑宗', kind: '门派', intro: '北方剑修大宗' });
+  await DB.saveFaction(bookId, { name: '赤焰帮', kind: '帮会', intro: '漕运势力' });
+  await check('势力新增可列出（name/kind/intro 齐全）', async () => {
+    const rows = await DB.listFactions(bookId);
+    eq(rows.length, 2);
+    const x = rows.find(f => f.name === '玄天剑宗');
+    eq(x.kind, '门派'); eq(x.intro, '北方剑修大宗');
+  });
+  await check('更新势力不新增行', async () => {
+    await DB.saveFaction(bookId, { name: '玄天剑宗', kind: '宗门', intro: '改后简介' }, fid);
+    const rows = await DB.listFactions(bookId);
+    eq(rows.length, 2, '应原地更新，不应新增行');
+    eq(rows.find(f => String(f.id) === String(fid)).intro, '改后简介');
+  });
+  await check('删单个势力', async () => {
+    await DB.deleteFaction(fid);
+    eq((await DB.listFactions(bookId)).length, 1);
+  });
+
   /* === T9 一致性报告 === */
   const jobId = await DB.startJob({ book_id: bookId, chapter_id: chId, kind: 'consistency', provider: 'mock', model: 'mock-1', prompt_chars: 120 });
   await DB.addIssues(bookId, chId, jobId, [

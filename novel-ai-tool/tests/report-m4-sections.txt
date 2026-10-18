@@ -1,0 +1,22 @@
+== schema 迁移到 v4 ==
+  PASS toVersion=4
+  PASS LATEST_VERSION>=4
+  PASS sections 表已建
+== 节 CRUD ==
+  PASS createSection 返 id
+  PASS listSections 两条
+  PASS idx 递增
+  PASS 自动带 book_id
+  PASS 自动带 chapter_id
+  PASS saveSectionBody 返字数
+  PASS 正文已存
+  PASS word_count 落库
+  PASS saveSectionDraft 覆盖正文
+  PASS saveSectionMeta 改标题
+  PASS saveSectionMeta 改摘要
+  PASS meta 不动正文
+  PASS reorder 生效
+  PASS deleteSection 剩一条
+  PASS 删章级联删节
+
+合计：18 通过 / 0 失败

@@ -7,43 +7,38 @@
   <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-  <!-- 框架页：只用于验证"壳 + 插件 + 数据层"接通没有。正式界面（书架/编辑器/动作条）待功能清单审核通过后在 M4/M5 落地 -->
-  <main class="wrap">
-    <h1 class="ttl">AI 写作助手</h1>
-    <p class="sub">框架自检（非正式界面）</p>
-    <pre id="probe">loading…</pre>
-  </main>
+  <!-- 应用外壳（M4）：#screen 由 app.js 按 hash 路由渲染各视图；底部三页签常驻 -->
+  <main id="screen" class="screen"><div class="booting">加载中…</div></main>
+
+  <nav class="tabbar">
+    <a class="tab" data-tab="write" href="#/shelf">✍ 写作</a>
+    <a class="tab" data-tab="me" href="#/me">☰ 我的</a>
+  </nav>
 
   <script src="cordova.js"></script>
   <script src="js/schema.js"></script>
   <script src="js/db.js"></script>
+  <script src="js/secureStore.js"></script>
+  <script src="js/tempStore.js"></script>
+  <script src="js/clean.js"></script>
+  <script src="js/providers.js"></script>
+  <script src="js/prompt.js"></script>
+  <script src="js/consistency.js"></script>
+  <script src="js/aistream.js"></script>
+  <script src="js/util.js"></script>
+  <script src="js/adopt.js"></script>
+  <script src="js/session.js"></script>
+  <script src="js/zip.js"></script>
+  <script src="js/exporter.js"></script>
+  <script src="js/importer.js"></script>
+  <script src="js/zipper.js"></script>
+  <script src="js/docx.js"></script>
+  <script src="js/backup.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/dataActions.js"></script>
+  <script src="js/draftGuard.js"></script>
   <script src="js/boot.js"></script>
-  <script>
-    // 原生壳里 capacitor.js 可能晚于 DOMContentLoaded 注入，故等 DOM 事件后再 boot
-    document.addEventListener('DOMContentLoaded', function () {
-      var el = document.getElementById('probe');
-      // 页面上看不到的错误也要进 logcat，否则 adb 侧只能看到白屏
-      window.onerror = function (msg, src, line) {
-        console.log('[selfcheck] JS ERROR ' + msg + ' @' + src + ':' + line);
-      };
-      function show() {
-        var r = window.NOVEL_BOOT.report;
-        var lines = [
-          '原生壳      : ' + (r.native ? 'ok' : 'browser preview（插件不可用）'),
-          '已注册插件  : ' + (r.plugins.length ? r.plugins.join(', ') : '（无）'),
-          '数据层      : ' + (r.ready
-              ? 'ok  v' + r.dbInfo.fromVersion + ' → v' + r.dbInfo.toVersion + '  FTS=' + r.dbInfo.ftsMode
-              : '未就绪'),
-          '错误        : ' + (r.error || '（无）')
-        ];
-        el.textContent = lines.join('\n');
-        console.log('[selfcheck] ' + lines.join(' | '));
-      }
-      window.NOVEL_BOOT.boot().then(show, function (e) {
-        console.log('[selfcheck] boot 抛出异常 ' + (e && e.message ? e.message : e));
-        show();
-      });
-    });
-  </script>
+  <script src="js/views.js"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>

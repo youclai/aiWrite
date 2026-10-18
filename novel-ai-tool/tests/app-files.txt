@@ -1,0 +1,302 @@
+/data/data/com.novelai.writer:
+total 80
+drwx------   9 u0_a59 u0_a59        3452 2026-10-17 18:31 .
+drwxrwx--x 515 system system       57344 2026-10-17 18:30 ..
+drwxrwx--x   2 u0_a59 u0_a59        3452 2026-10-17 18:31 app_textures
+drwx------   3 u0_a59 u0_a59        3452 2026-10-17 18:31 app_webview
+drwxrws--x   4 u0_a59 u0_a59_cache  3452 2026-10-17 18:31 cache
+drwxrws--x   2 u0_a59 u0_a59_cache  3452 2026-10-17 18:30 code_cache
+drwxrwx--x   2 u0_a59 u0_a59        3452 2026-10-17 18:31 files
+drwxrwx--x   3 u0_a59 u0_a59        3452 2026-10-17 18:31 no_backup
+drwxrwx--x   2 u0_a59 u0_a59        3452 2026-10-17 18:31 shared_prefs
+
+/data/data/com.novelai.writer/app_textures:
+total 10
+drwxrwx--x 2 u0_a59 u0_a59 3452 2026-10-17 18:31 .
+drwx------ 9 u0_a59 u0_a59 3452 2026-10-17 18:31 ..
+
+/data/data/com.novelai.writer/app_webview:
+total 41
+drwx------ 3 u0_a59 u0_a59  3452 2026-10-17 18:31 .
+drwx------ 9 u0_a59 u0_a59  3452 2026-10-17 18:31 ..
+drwx------ 8 u0_a59 u0_a59  3452 2026-10-17 18:31 Default
+-rw------- 1 u0_a59 u0_a59    81 2026-10-17 18:31 last-exit-info
+-rw------- 1 u0_a59 u0_a59   412 2026-10-17 18:31 pref_store
+-rwx------ 1 u0_a59 u0_a59 13941 2026-10-17 18:31 variations_seed
+-rw------- 1 u0_a59 u0_a59     0 2026-10-17 18:31 variations_stamp
+-rw------- 1 u0_a59 u0_a59    24 2026-10-17 18:31 webview_data.lock
+
+/data/data/com.novelai.writer/app_webview/Default:
+total 52
+drwx------ 8 u0_a59 u0_a59  3452 2026-10-17 18:31 .
+drwx------ 3 u0_a59 u0_a59  3452 2026-10-17 18:31 ..
+-rw------- 1 u0_a59 u0_a59 24576 2026-10-17 18:31 Cookies
+-rw------- 1 u0_a59 u0_a59     0 2026-10-17 18:31 Cookies-journal
+drwx------ 3 u0_a59 u0_a59  3452 2026-10-17 18:31 Local Storage
+-rw------- 1 u0_a59 u0_a59    59 2026-10-17 18:31 Network Persistent State
+drwx------ 2 u0_a59 u0_a59  3452 2026-10-17 18:31 PersistentOriginTrials
+drwx------ 2 u0_a59 u0_a59  3452 2026-10-17 18:31 Session Storage
+drwx------ 3 u0_a59 u0_a59  3452 2026-10-17 18:31 Shared Dictionary
+drwx------ 3 u0_a59 u0_a59  3452 2026-10-17 18:31 blob_storage
+drwx------ 3 u0_a59 u0_a59  3452 2026-10-17 18:31 shared_proto_db
+
+/data/data/com.novelai.writer/app_webview/Default/Local Storage:
+total 9
+drwx------ 3 u0_a59 u0_a59 3452 2026-10-17 18:31 .
+drwx------ 8 u0_a59 u0_a59 3452 2026-10-17 18:31 ..
+drwx------ 2 u0_a59 u0_a59 3452 2026-10-17 18:31 leveldb
+
+/data/data/com.novelai.writer/app_webview/Default/Local Storage/leveldb:
+total 26
+drwx------ 2 u0_a59 u0_a59 3452 2026-10-17 18:31 .
+drwx------ 3 u0_a59 u0_a59 3452 2026-10-17 18:31 ..
+-rw------- 1 u0_a59 u0_a59   30 2026-10-17 18:31 000003.log
+-rw------- 1 u0_a59 u0_a59   16 2026-10-17 18:31 CURRENT
+-rw------- 1 u0_a59 u0_a59    0 2026-10-17 18:31 LOCK
+-rw------- 1 u0_a59 u0_a59  314 2026-10-17 18:31 LOG
+-rw------- 1 u0_a59 u0_a59  314 2026-10-17 18:31 LOG.old
+-rw------- 1 u0_a59 u0_a59   41 2026-10-17 18:31 MANIFEST-000001
+
+/data/data/com.novelai.writer/app_webview/Default/PersistentOriginTrials:
+total 6
+drwx------ 2 u0_a59 u0_a59 3452 2026-10-17 18:31 .
+drwx------ 8 u0_a59 u0_a59 3452 2026-10-17 18:31 ..
+-rw------- 1 u0_a59 u0_a59    0 2026-10-17 18:31 LOCK
+-rw------- 1 u0_a59 u0_a59    0 2026-10-17 18:31 LOG
+-rw------- 1 u0_a59 u0_a59    0 2026-10-17 18:31 LOG.old
+
+/data/data/com.novelai.writer/app_webview/Default/Session Storage:
+total 22
+drwx------ 2 u0_a59 u0_a59 3452 2026-10-17 18:31 .
+drwx------ 8 u0_a59 u0_a59 3452 2026-10-17 18:31 ..
+-rw------- 1 u0_a59 u0_a59  133 2026-10-17 18:31 000003.log
+-rw------- 1 u0_a59 u0_a59   16 2026-10-17 18:31 CURRENT
+-rw------- 1 u0_a59 u0_a59    0 2026-10-17 18:31 LOCK
+-rw------- 1 u0_a59 u0_a59  261 2026-10-17 18:31 LOG
+-rw------- 1 u0_a59 u0_a59   41 2026-10-17 18:31 MANIFEST-000001
+
+/data/data/com.novelai.writer/app_webview/Default/Shared Dictionary:
+total 57
+drwx------ 3 u0_a59 u0_a59  3452 2026-10-17 18:31 .
+drwx------ 8 u0_a59 u0_a59  3452 2026-10-17 18:31 ..
+drwx------ 3 u0_a59 u0_a59  3452 2026-10-17 18:31 cache
+-rw------- 1 u0_a59 u0_a59 49152 2026-10-17 18:31 db
+-rw------- 1 u0_a59 u0_a59     0 2026-10-17 18:31 db-journal
+
+/data/data/com.novelai.writer/app_webview/Default/Shared Dictionary/cache:
+total 13
+drwx------ 3 u0_a59 u0_a59 3452 2026-10-17 18:31 .
+drwx------ 3 u0_a59 u0_a59 3452 2026-10-17 18:31 ..
+-rw------- 1 u0_a59 u0_a59   24 2026-10-17 18:31 index
+drwx------ 2 u0_a59 u0_a59 3452 2026-10-17 18:31 index-dir
+
+/data/data/com.novelai.writer/app_webview/Default/Shared Dictionary/cache/index-dir:
+total 10
+drwx------ 2 u0_a59 u0_a59 3452 2026-10-17 18:31 .
+drwx------ 3 u0_a59 u0_a59 3452 2026-10-17 18:31 ..
+-rw------- 1 u0_a59 u0_a59   48 2026-10-17 18:31 the-real-index
+
+/data/data/com.novelai.writer/app_webview/Default/blob_storage:
+total 9
+drwx------ 3 u0_a59 u0_a59 3452 2026-10-17 18:31 .
+drwx------ 8 u0_a59 u0_a59 3452 2026-10-17 18:31 ..
+drwx------ 2 u0_a59 u0_a59 3452 2026-10-17 18:31 2c74d5f8-b965-4c48-b569-a6d5b2b564e9
+
+/data/data/com.novelai.writer/app_webview/Default/blob_storage/2c74d5f8-b965-4c48-b569-a6d5b2b564e9:
+total 6
+drwx------ 2 u0_a59 u0_a59 3452 2026-10-17 18:31 .
+drwx------ 3 u0_a59 u0_a59 3452 2026-10-17 18:31 ..
+
+/data/data/com.novelai.writer/app_webview/Default/shared_proto_db:
+total 25
+drwx------ 3 u0_a59 u0_a59 3452 2026-10-17 18:31 .
+drwx------ 8 u0_a59 u0_a59 3452 2026-10-17 18:31 ..
+-rw------- 1 u0_a59 u0_a59    0 2026-10-17 18:31 000003.log
+-rw------- 1 u0_a59 u0_a59   16 2026-10-17 18:31 CURRENT
+-rw------- 1 u0_a59 u0_a59    0 2026-10-17 18:31 LOCK
+-rw------- 1 u0_a59 u0_a59  302 2026-10-17 18:31 LOG
+-rw------- 1 u0_a59 u0_a59  302 2026-10-17 18:31 LOG.old
+-rw------- 1 u0_a59 u0_a59   41 2026-10-17 18:31 MANIFEST-000001
+drwx------ 2 u0_a59 u0_a59 3452 2026-10-17 18:31 metadata
+
+/data/data/com.novelai.writer/app_webview/Default/shared_proto_db/metadata:
+total 26
+drwx------ 2 u0_a59 u0_a59 3452 2026-10-17 18:31 .
+drwx------ 3 u0_a59 u0_a59 3452 2026-10-17 18:31 ..
+-rw------- 1 u0_a59 u0_a59  194 2026-10-17 18:31 000003.log
+-rw------- 1 u0_a59 u0_a59   16 2026-10-17 18:31 CURRENT
+-rw------- 1 u0_a59 u0_a59    0 2026-10-17 18:31 LOCK
+-rw------- 1 u0_a59 u0_a59  320 2026-10-17 18:31 LOG
+-rw------- 1 u0_a59 u0_a59  320 2026-10-17 18:31 LOG.old
+-rw------- 1 u0_a59 u0_a59   41 2026-10-17 18:31 MANIFEST-000001
+
+/data/data/com.novelai.writer/cache:
+total 16
+drwxrws--x 4 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 .
+drwx------ 9 u0_a59 u0_a59       3452 2026-10-17 18:31 ..
+drwx--S--- 3 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 Crash Reports
+drwx--S--- 6 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 WebView
+
+/data/data/com.novelai.writer/cache/Crash Reports:
+total 9
+drwx--S--- 3 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 .
+drwxrws--x 4 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 ..
+drwx--S--- 2 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 ANR Variations
+
+/data/data/com.novelai.writer/cache/Crash Reports/ANR Variations:
+total 18
+drwx--S--- 2 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 .
+drwx--S--- 3 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 ..
+-rw------- 1 u0_a59 u0_a59_cache  990 2026-10-17 18:31 17c1b6500e6e5ddc8dcbfff536231933
+-rw------- 1 u0_a59 u0_a59_cache  990 2026-10-17 18:31 42b28a64f460e139de163f8f29f2fd57
+-rw------- 1 u0_a59 u0_a59_cache  110 2026-10-17 18:31 4bd0867675c950d956a9e2b7f593fea9
+
+/data/data/com.novelai.writer/cache/WebView:
+total 50
+drwx--S--- 6 u0_a59 u0_a59_cache  3452 2026-10-17 18:31 .
+drwxrws--x 4 u0_a59 u0_a59_cache  3452 2026-10-17 18:31 ..
+drwx--S--- 2 u0_a59 u0_a59_cache  3452 2026-10-17 18:31 Crash Reports
+drwx--S--- 6 u0_a59 u0_a59_cache  3452 2026-10-17 18:31 Crashpad
+drwx--S--- 3 u0_a59 u0_a59_cache  3452 2026-10-17 18:31 Default
+drwx--S--- 2 u0_a59 u0_a59_cache  3452 2026-10-17 18:31 SafeBrowsing
+-rw------- 1 u0_a59 u0_a59_cache 30036 2026-10-17 18:31 font_unique_name_table.pb
+
+/data/data/com.novelai.writer/cache/WebView/Crash Reports:
+total 6
+drwx--S--- 2 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 .
+drwx--S--- 6 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 ..
+
+/data/data/com.novelai.writer/cache/WebView/Crashpad:
+total 18
+drwx--S--- 6 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 .
+drwx--S--- 6 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 ..
+drwx--S--- 2 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 attachments
+drwx--S--- 2 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 completed
+drwx--S--- 2 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 new
+drwx--S--- 2 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 pending
+
+/data/data/com.novelai.writer/cache/WebView/Crashpad/attachments:
+total 6
+drwx--S--- 2 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 .
+drwx--S--- 6 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 ..
+
+/data/data/com.novelai.writer/cache/WebView/Crashpad/completed:
+total 6
+drwx--S--- 2 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 .
+drwx--S--- 6 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 ..
+
+/data/data/com.novelai.writer/cache/WebView/Crashpad/new:
+total 6
+drwx--S--- 2 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 .
+drwx--S--- 6 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 ..
+
+/data/data/com.novelai.writer/cache/WebView/Crashpad/pending:
+total 6
+drwx--S--- 2 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 .
+drwx--S--- 6 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 ..
+
+/data/data/com.novelai.writer/cache/WebView/Default:
+total 9
+drwx--S--- 3 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 .
+drwx--S--- 6 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 ..
+drwx--S--- 3 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 HTTP Cache
+
+/data/data/com.novelai.writer/cache/WebView/Default/HTTP Cache:
+total 9
+drwx--S--- 3 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 .
+drwx--S--- 3 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 ..
+drwx--S--- 4 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 Code Cache
+
+/data/data/com.novelai.writer/cache/WebView/Default/HTTP Cache/Code Cache:
+total 12
+drwx--S--- 4 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 .
+drwx--S--- 3 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 ..
+drwx--S--- 3 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 js
+drwx--S--- 3 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 wasm
+
+/data/data/com.novelai.writer/cache/WebView/Default/HTTP Cache/Code Cache/js:
+total 109
+drwx--S--- 3 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 .
+drwx--S--- 4 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 ..
+-rw------- 1 u0_a59 u0_a59_cache  173 2026-10-17 18:31 0a70b892628b84fe_0
+-rw------- 1 u0_a59 u0_a59_cache  176 2026-10-17 18:31 10de7a82f66b474b_0
+-rw------- 1 u0_a59 u0_a59_cache  176 2026-10-17 18:31 196b77cded647e68_0
+-rw------- 1 u0_a59 u0_a59_cache  177 2026-10-17 18:31 1d48e75eaa1bfd40_0
+-rw------- 1 u0_a59 u0_a59_cache  179 2026-10-17 18:31 33e05fc2db8cc0a7_0
+-rw------- 1 u0_a59 u0_a59_cache  177 2026-10-17 18:31 3593911bf2ac4b06_0
+-rw------- 1 u0_a59 u0_a59_cache  178 2026-10-17 18:31 4e2b43c4394f0bf8_0
+-rw------- 1 u0_a59 u0_a59_cache  178 2026-10-17 18:31 5158fdd583b5de52_0
+-rw------- 1 u0_a59 u0_a59_cache  181 2026-10-17 18:31 5b9767e9ae41201b_0
+-rw------- 1 u0_a59 u0_a59_cache  180 2026-10-17 18:31 5d6335975b502470_0
+-rw------- 1 u0_a59 u0_a59_cache  175 2026-10-17 18:31 777c67e95bba928c_0
+-rw------- 1 u0_a59 u0_a59_cache  181 2026-10-17 18:31 79327c0bd029f71f_0
+-rw------- 1 u0_a59 u0_a59_cache  178 2026-10-17 18:31 86bff0654662fce8_0
+-rw------- 1 u0_a59 u0_a59_cache  178 2026-10-17 18:31 884c4673ef8cac04_0
+-rw------- 1 u0_a59 u0_a59_cache  176 2026-10-17 18:31 a1ed3ead0c13b49f_0
+-rw------- 1 u0_a59 u0_a59_cache  178 2026-10-17 18:31 a8e8743ec2692256_0
+-rw------- 1 u0_a59 u0_a59_cache  174 2026-10-17 18:31 a91ed6523f65946b_0
+-rw------- 1 u0_a59 u0_a59_cache  175 2026-10-17 18:31 c027602aa5d74c54_0
+-rw------- 1 u0_a59 u0_a59_cache  176 2026-10-17 18:31 cbc924912aeb55b2_0
+-rw------- 1 u0_a59 u0_a59_cache  189 2026-10-17 18:31 d332da9890de2284_0
+-rw------- 1 u0_a59 u0_a59_cache  175 2026-10-17 18:31 d9a2eec9f734248e_0
+-rw------- 1 u0_a59 u0_a59_cache  179 2026-10-17 18:31 d9ed6927449bacf7_0
+-rw------- 1 u0_a59 u0_a59_cache  181 2026-10-17 18:31 e7f2fc9e17c5309d_0
+-rw------- 1 u0_a59 u0_a59_cache  172 2026-10-17 18:31 eacd03ff9bd4975c_0
+-rw------- 1 u0_a59 u0_a59_cache   24 2026-10-17 18:31 index
+drwx--S--- 2 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 index-dir
+
+/data/data/com.novelai.writer/cache/WebView/Default/HTTP Cache/Code Cache/js/index-dir:
+total 10
+drwx--S--- 2 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 .
+drwx--S--- 3 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 ..
+-rw------- 1 u0_a59 u0_a59_cache  624 2026-10-17 18:31 the-real-index
+
+/data/data/com.novelai.writer/cache/WebView/Default/HTTP Cache/Code Cache/wasm:
+total 13
+drwx--S--- 3 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 .
+drwx--S--- 4 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 ..
+-rw------- 1 u0_a59 u0_a59_cache   24 2026-10-17 18:31 index
+drwx--S--- 2 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 index-dir
+
+/data/data/com.novelai.writer/cache/WebView/Default/HTTP Cache/Code Cache/wasm/index-dir:
+total 10
+drwx--S--- 2 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 .
+drwx--S--- 3 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 ..
+-rw------- 1 u0_a59 u0_a59_cache   48 2026-10-17 18:31 the-real-index
+
+/data/data/com.novelai.writer/cache/WebView/SafeBrowsing:
+total 6
+drwx--S--- 2 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 .
+drwx--S--- 6 u0_a59 u0_a59_cache 3452 2026-10-17 18:31 ..
+
+/data/data/com.novelai.writer/code_cache:
+total 10
+drwxrws--x 2 u0_a59 u0_a59_cache 3452 2026-10-17 18:30 .
+drwx------ 9 u0_a59 u0_a59       3452 2026-10-17 18:31 ..
+
+/data/data/com.novelai.writer/files:
+total 14
+drwxrwx--x 2 u0_a59 u0_a59 3452 2026-10-17 18:31 .
+drwx------ 9 u0_a59 u0_a59 3452 2026-10-17 18:31 ..
+-rw------- 1 u0_a59 u0_a59   24 2026-10-17 18:31 profileInstalled
+
+/data/data/com.novelai.writer/no_backup:
+total 13
+drwxrwx--x 3 u0_a59 u0_a59 3452 2026-10-17 18:31 .
+drwx------ 9 u0_a59 u0_a59 3452 2026-10-17 18:31 ..
+drwx------ 2 u0_a59 u0_a59 3452 2026-10-17 18:31 .webview
+
+/data/data/com.novelai.writer/no_backup/.webview:
+total 4106
+drwx------ 2 u0_a59 u0_a59    3452 2026-10-17 18:31 .
+drwxrwx--x 3 u0_a59 u0_a59    3452 2026-10-17 18:31 ..
+-rw------- 1 u0_a59 u0_a59 4194304 2026-10-17 18:31 BrowserMetrics-spare.pma
+
+/data/data/com.novelai.writer/shared_prefs:
+total 26
+drwxrwx--x 2 u0_a59 u0_a59 3452 2026-10-17 18:31 .
+drwx------ 9 u0_a59 u0_a59 3452 2026-10-17 18:31 ..
+-rw-rw---- 1 u0_a59 u0_a59  360 2026-10-17 18:31 AwOriginVisitLoggerPrefs.xml
+-rw-rw---- 1 u0_a59 u0_a59  220 2026-10-17 18:31 CapWebViewSettings.xml
+-rw-rw---- 1 u0_a59 u0_a59  435 2026-10-17 18:31 WebViewChromiumPrefs.xml
+-rw-rw---- 1 u0_a59 u0_a59 1144 2026-10-17 18:31 sqlite_encrypted_shared_prefs.xml

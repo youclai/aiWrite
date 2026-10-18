@@ -1,0 +1,33 @@
+== 导出打包 ==
+  PASS manifest 记录各表
+  PASS manifest 不含 FTS 虚表
+  PASS counts 章节=1
+  PASS counts 角色=1 快照>=1
+  PASS schema_version=LATEST
+  PASS 产物是 zip 字节
+== 密钥绝不入包 ==
+  PASS manifest 标记剔除了 api_key
+  PASS 包内扫描查不到泄漏密钥
+  PASS settings api 行保留 provider
+  PASS settings api 行已无 api_key 值
+== 恢复到全新库 ==
+  PASS 恢复成功
+  PASS safety 先于 apply
+  PASS 恢复后章节数=1
+  PASS 特殊字符正文无损往返(分号/引号/&<>)
+  PASS 恢复后角色=1
+  PASS 恢复后快照保留
+  PASS 恢复后模板存在(内置7条)
+  PASS 恢复库 settings 无泄漏密钥
+== 版本闸：拒绝过新 ==
+  PASS 过新备份被拒
+  PASS 拒绝时不触发 safety
+== 恢复中途失败：整体回滚不破坏原库 ==
+  PASS 失败返回 apply-failed
+  PASS 失败已回滚(books 行数不变)
+== 纯函数：敏感字段剔除 ==
+  PASS 剔除 api_key/access_token/password
+  PASS 非敏感键保留
+  PASS key_set 不被误剔
+
+合计：25 通过 / 0 失败

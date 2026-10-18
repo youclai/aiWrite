@@ -26,33 +26,36 @@ function eq(a, b, m) {
   }
 }
 
-// 模仿 @capacitor-community/sqlite 8.x 的真实返回形状
+// 模仿 @capacitor-community/sqlite v8 全局插件对象（真机实测形状）：
+// query/run/execute 都吃 {database, statement(s), values}；run 返回 {changes:{changes,lastId}}；
+// createConnection/open/isDBOpen/closeConnection 都在同一对象上（非旧的 retrieveConnection）。
 function fakeNative(d, opts) {
   const o = opts || {};
-  const conn = {
-    query: (sql, params) => {
-      if (o.failQuery) throw new Error(o.failQuery);
-      const p = (params || []).map(x => x === undefined ? null : x);
-      return Promise.resolve({ values: p.length ? d.prepare(sql).all(...p) : d.prepare(sql).all() });
+  let connected = false;
+  const norm = (p) => (p || []).map(x => x === undefined ? null : x);
+  const SQLite = {
+    createConnection: (cfg) => { SQLite._cfg = cfg; if (o.failConnect) return Promise.reject(new Error(o.failConnect)); connected = true; return Promise.resolve(); },
+    open: () => Promise.resolve(),
+    isDBOpen: () => Promise.resolve({ result: connected }),
+    closeConnection: () => { connected = false; return Promise.resolve(); },
+    query: (opt) => {
+      if (o.failQuery) return Promise.reject(new Error(o.failQuery));
+      const p = norm(opt.values);
+      return Promise.resolve({ values: p.length ? d.prepare(opt.statement).all(...p) : d.prepare(opt.statement).all() });
     },
-    execute: (sql, params, throwOnError) => {
-      const p = (params || []).map(x => x === undefined ? null : x);
-      const r = p.length ? d.prepare(sql).run(...p) : d.prepare(sql).run();
-      const out = { changes: Number(r.changes) };
-      // 插件把 lastInsertRowid 放在 message（字符串），部分版本另带 lastId
-      if (o.lastIdIn === 'message') out.message = String(r.lastInsertRowid);
-      else out.lastId = Number(r.lastInsertRowid);
-      return Promise.resolve(out);
+    run: (opt) => {
+      if (o.failRun) return Promise.reject(new Error(o.failRun));
+      const p = norm(opt.values);
+      const r = p.length ? d.prepare(opt.statement).run(...p) : d.prepare(opt.statement).run();
+      return Promise.resolve({ changes: { changes: Number(r.changes), lastId: Number(r.lastInsertRowid), values: [] } });
+    },
+    execute: (opt) => {
+      if (o.failExec) return Promise.reject(new Error(o.failExec));
+      d.exec(opt.statements);   // 批量 DDL / PRAGMA / BEGIN-COMMIT（transaction:false 语义由上层自管事务）
+      return Promise.resolve({ changes: { changes: 0 } });
     }
   };
-  // DDL / 多语句（CREATE TRIGGER ... BEGIN ... END;）在真机走 query 还是 exec 尚未确定，
-  // 这里两种都容错，专测 boot.js 传进去的语句形状
-  const SQLite = {
-    checkConnections: () => Promise.resolve({ connect: [] }),
-    createConnection: (cfg) => { SQLite._cfg = cfg; return Promise.resolve(); },
-    retrieveConnection: (name) => Promise.resolve(name === 'novel' ? conn : null)
-  };
-  return { isNativePlatform: () => true, Plugins: { SQLite } };
+  return { isNativePlatform: () => true, Plugins: { CapacitorSQLite: SQLite } };
 }
 
 (async function run() {

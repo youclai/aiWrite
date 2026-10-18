@@ -1,0 +1,45 @@
+== 导出 txt ==
+  PASS txt 文件名=书名.txt
+  PASS bundle.chapters=2
+  PASS bundle.words=9(4+5? 实际字数)
+  PASS txt 以 BOM 开头
+  PASS txt 含两章正文
+  PASS txt 含前言(书名/作者/简介)
+== 导出 txt + 分章 ==
+  PASS 分章共 1 全本 + 2 分章 = 3 文件
+  PASS 分章文件落盘
+== 导出 docx（二进制落盘再读回）==
+  PASS docx 文件名
+  PASS docx 落盘
+  PASS docx 六部件齐全
+== 导出 作品包 zip ==
+  PASS zip 文件名
+  PASS zip 含全本txt+角色卡+结构
+== 导入建书（按章 / 按空行）==
+  PASS 章标题文本导入=2 章
+  PASS 无章标题按空行=3 章
+  PASS 导入正文无损含"内容一"
+  PASS 空内容 reject
+== 备份（密钥剔除 + safety）==
+  PASS 备份名 backup_*.zip
+  PASS 备份落 temp/backup
+  PASS manifest 记录剔除字段含 api_key
+  PASS 盘上备份包查不到明文密钥
+  PASS bk.bytes 为字节数(>0)
+== listBackups 倒序 ==
+  PASS 至少 1 个备份
+  PASS 首项即刚备份
+== 恢复（先 safety 快照，再无损回滚当前库）==
+  PASS 中途多了一本
+  PASS 恢复 ok
+  PASS 恢复含 safety 前置
+  PASS 恢复后书数回到备份时
+  PASS 生成了 safety_*.zip
+  PASS 恢复后仍有《风与尘》
+  PASS 恢复后 api_key 已被剔（值替换）
+== 存储统计 ==
+  PASS 统计 tables.books 与库一致
+  PASS 统计 temp 已并入
+  PASS 库体积>0
+
+合计：34 通过 / 0 失败

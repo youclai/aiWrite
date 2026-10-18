@@ -126,6 +126,39 @@
         { sql: "INSERT INTO templates (kind,name,instruction,is_builtin,sort_order,created_at,updated_at) " +
                "VALUES ('summary','章节摘要','用 80 字左右概括本章事件与情绪走向，只列事实与关键转折，不评价。',1,7,0,0)" }
       ]
+    },
+    {
+      version: 3,
+      name: '势力介绍（书内设定：门派/国家/组织等阵营）',
+      up: [
+        { sql: "CREATE TABLE factions (" +
+               "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+               "book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE," +
+               "name TEXT NOT NULL," +
+               "kind TEXT NOT NULL DEFAULT ''," +
+               "intro TEXT NOT NULL DEFAULT ''," +
+               "created_at INTEGER NOT NULL," +
+               "updated_at INTEGER NOT NULL)" },
+        { sql: 'CREATE INDEX idx_factions_book ON factions(book_id, name)' }
+      ]
+    },
+    {
+      version: 4,
+      name: '节（章的下级写作单元：章 > 节）',
+      up: [
+        { sql: "CREATE TABLE sections (" +
+               "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+               "chapter_id INTEGER NOT NULL REFERENCES chapters(id) ON DELETE CASCADE," +
+               "book_id INTEGER NOT NULL," +
+               "idx INTEGER NOT NULL," +
+               "title TEXT NOT NULL DEFAULT ''," +
+               "body TEXT NOT NULL DEFAULT ''," +
+               "summary TEXT NOT NULL DEFAULT ''," +
+               "word_count INTEGER NOT NULL DEFAULT 0," +
+               "created_at INTEGER NOT NULL," +
+               "updated_at INTEGER NOT NULL)" },
+        { sql: 'CREATE INDEX idx_sections_chapter ON sections(chapter_id, idx)' }
+      ]
     }
   ];
 
@@ -165,6 +198,20 @@
       check_scope: 'chapter',
       token_budget: 6000,
       auto_adopt: false          // 写死 false：界面不提供开关
+    },
+    // API 连接配置：这里只存"非敏感"字段。provider/base_url/model 可入明文库；
+    // 真正的 api_key 绝不进本表，只经 NOVEL_SECURE 以 AES-GCM 密文落在 Preferences（F50）。
+    api: {
+      provider: 'mock',          // openai_chat | anthropic | custom | mock
+      base_url: '',              // custom/兼容服务的地址；provider 预设时可自动填
+      model: '',
+      key_set: false             // 仅标记"是否已配置密钥"，布尔值本身不敏感；密钥在 SecureStore
+    },
+    // 派生/暂存数据策略：一切二次产物只落在私有目录 temp/ 根内并分类归档（NOVEL_TEMP）
+    storage: {
+      temp_root: 'temp',         // 唯一根目录名，主数据(SQLite)与派生数据物理隔离
+      temp_auto_clean: true,     // 回前台/定时清理过期一次性产物
+      temp_keep_days: 7          // preview/ai/import/logs 类暂存保留天数；backup 另按滚动 10 份
     },
     appearance: {
       font_size: 17,

@@ -1,0 +1,28 @@
+PASS | docx.build 返回 Uint8Array | 5155B
+PASS | namelist 含 [Content_Types].xml | [Content_Types].xml,_rels/.rels,word/document.xml,word/_rels/document.xml.rels,word/styles.xml,word/header1.xml
+PASS | namelist 含 _rels/.rels | [Content_Types].xml,_rels/.rels,word/document.xml,word/_rels/document.xml.rels,word/styles.xml,word/header1.xml
+PASS | namelist 含 word/document.xml | [Content_Types].xml,_rels/.rels,word/document.xml,word/_rels/document.xml.rels,word/styles.xml,word/header1.xml
+PASS | namelist 含 word/_rels/document.xml.rels | [Content_Types].xml,_rels/.rels,word/document.xml,word/_rels/document.xml.rels,word/styles.xml,word/header1.xml
+PASS | namelist 含 word/styles.xml | [Content_Types].xml,_rels/.rels,word/document.xml,word/_rels/document.xml.rels,word/styles.xml,word/header1.xml
+PASS | namelist 含 word/header1.xml | [Content_Types].xml,_rels/.rels,word/document.xml,word/_rels/document.xml.rels,word/styles.xml,word/header1.xml
+PASS | document.xml 含 pageBreakBefore
+PASS | document.xml 含章标题
+PASS | document.xml 正文分段(两 run)
+PASS | document.xml 引用页眉 headerReference
+PASS | document.xml 有 sectPr + A4 页面
+PASS | document.xml 标题页含书名/作者/梗概
+PASS | header1.xml 页眉含书名
+PASS | header1.xml 页眉含总字数 | <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/rel
+PASS | styles.xml 首行缩进 firstLineChars=200
+PASS | styles.xml eastAsia=宋体
+PASS | ContentTypes 覆盖 document/styles/header
+PASS | document.xml.rels 关联 styles 与 header
+PASS | XML 转义 <&> 不出现在文档
+PASS | docx 剔除 XML 非法控制字符
+PASS | includeHeader=false 去掉 header1.xml 部件
+PASS | includeHeader=false 无 headerReference
+PASS | includeHeader=false ContentTypes 不含 header override
+PASS | pageBreak=false 不含 pageBreakBefore
+
+合计 25 项，失败 0 项。
