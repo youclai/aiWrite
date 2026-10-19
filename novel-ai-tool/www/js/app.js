@@ -107,17 +107,44 @@
     },
 
     /* ---------- 系统返回键（原生 onBackPressed 转发至此） ---------- */
-    // 逐级回退：编辑→作品、作品→书架；已在顶层页签（非书架）先回书架；
-    // 已在书架则“再按一次退出”（2.5s 内连按两次才真退）。
-    onBack: function () {
-      var self = this;
-      if (this.state.flush) { try { this.state.flush(); } catch (e) {} this.state.flush = null; }
+    // 统一回退入口 navigateUp()：系统返回键与界面返回按钮共用同一实现，行为严格一致。
+    // 顺序：①有覆盖层（sheet 弹层 / FAB 菜单 / 预览区）先关覆盖层；②按当前 hash 逐级回退
+    //   （节→章、编辑→章列表、章→书章节列表、书→书架）；③已在顶层页签（书架/我的根态）
+    //   才走“再按一次退出”（2.5s 内连按两次真退）。回退成功不记 _lastBack、不弹退出提示。
+    closeOverlay: function () {
+      var el = this.el;
+      if (!el || !el.querySelectorAll) return false;
+      var closed = false;
+      // 多个 .sheet（formSheet/confirmSheet/exSheet/编辑器自带）逐个检查 hidden
+      [].forEach.call(el.querySelectorAll('.sheet'), function (s) { if (!s.hidden) { s.hidden = true; closed = true; } });
+      if (closed) return true;
+      var fw = el.querySelector('.fab-wrap.open');
+      if (fw) { fw.classList.remove('open'); return true; }
+      var pv = el.querySelector('.preview');
+      if (pv && !pv.hidden) { pv.hidden = true; return true; }
+      return false;
+    },
+
+    // 上一级路由：hint 为界面返回按钮声明的精确目标（优先用，避免反查）；
+    // 无 hint 时从当前 hash 推导。章→书章节列表不拼空 bookId：state.bookId 取不到直接兜底回书架，
+    // 绝不生成 #/book//chapters 这种非法路由。返回 false 表示已在顶层、无处可退。
+    navigateUp: function (hint) {
+      if (hint) { this.go(hint); return true; }
       var h = root.location.hash || '#/shelf', m;
-      if ((m = h.match(/^#\/section\/(\d+)\/\d+$/))) { this.go('#/chapter/' + m[1]); return; }
-      if ((m = h.match(/^#\/editor\/(\d+)\/(\d+)$/))) { this.go('#/chapter/' + m[2]); return; }
-      if ((m = h.match(/^#\/chapter\/(\d+)$/))) { this.go('#/book/' + (this.state.bookId || '') + '/chapters'); return; }
-      if (/^#\/book\/\d+/.test(h)) { this.go('#/shelf'); return; }
-      if (h !== '#/shelf') { this.go('#/shelf'); return; }   // 在“我的”顶层→先回作品/书架
+      if ((m = h.match(/^#\/section\/(\d+)\/\d+$/))) { this.go('#/chapter/' + m[1]); return true; }
+      if ((m = h.match(/^#\/editor\/\d+\/(\d+)$/))) { this.go('#/chapter/' + m[1]); return true; }
+      if ((m = h.match(/^#\/chapter\/(\d+)$/))) {
+        this.go(this.state.bookId ? '#/book/' + this.state.bookId + '/chapters' : '#/shelf');
+        return true;
+      }
+      if (/^#\/book\/\d+/.test(h)) { this.go('#/shelf'); return true; }
+      return false;   // #/shelf / #/me(/tab) 属顶层页签，无上级可退
+    },
+
+    onBack: function () {
+      if (this.state.flush) { try { this.state.flush(); } catch (e) {} this.state.flush = null; }
+      if (this.closeOverlay()) return;                        // 编辑态开着弹层/FAB/预览：本按返回只关覆盖层
+      if (this.navigateUp()) { this._lastBack = 0; return; }  // 逐级回退成功：清双击计时，绝不弹退出提示
       var t = Date.now();
       if (this._lastBack && (t - this._lastBack) < 2500) { this.nativeExit(); return; }
       this._lastBack = t;

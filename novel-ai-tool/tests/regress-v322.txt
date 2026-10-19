@@ -1,0 +1,14 @@
+﻿m2b_boot.test.cjs => M2b 7 passed, 0 failed  -> tests/report-m2b.txt
+m2_data.test.cjs => M2 41 passed, 0 failed  -> tests/report-m2.txt
+m3_kernel.test.cjs => M3-kernel 28 passed, 0 failed  -> tests/report-m3-kernel.txt
+m3_store.test.cjs => M3 20 passed, 0 failed  -> tests/report-m3.txt
+m4_core.test.cjs => 鍚堣锛?7 閫氳繃 / 0 澶辫触
+m4_router.test.cjs => M4-router 12 passed, 0 failed  -> tests/report-m4-router.txt
+m4_sections.test.cjs => 鍚堣锛?8 閫氳繃 / 0 澶辫触
+m5_logic.test.cjs => 鍚堣锛?2 閫氳繃 / 0 澶辫触
+m6_actions.test.cjs => 閫氳繃 34 澶辫触 0
+m6_backup.test.cjs => 閫氳繃 25 澶辫触 0
+m6_docx.test.cjs => [鍗曟祴] 閫氳繃 25 澶辫触 0
+m6_files.test.cjs => [鍗曟祴] 閫氳繃 25 澶辫触 0
+m6_guard.test.cjs => 閫氳繃 22 澶辫触 0
+m6_storage.test.cjs => 閫氳繃 21 澶辫触 0

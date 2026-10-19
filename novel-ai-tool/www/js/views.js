@@ -30,11 +30,11 @@
   }
 
   var BUILTIN = [
-    { kind: 'polish', name: '润色', instruction: '在保持原意、人称与专有名词的前提下，让文字更凝练、更有画面感。' },
-    { kind: 'expand', name: '扩写', instruction: '在不改变剧情的前提下，扩写动作、感官与心理细节，篇幅约为原文的 1.5–2 倍。' },
-    { kind: 'condense', name: '缩写', instruction: '压缩冗余表述，保留关键情节与信息，使行文更紧凑。' },
-    { kind: 'dialogue', name: '转对话', instruction: '把叙述改写为人物对话，突出各自语气与潜台词，不要添加旁白解释。' },
-    { kind: 'continue', name: '续写', instruction: '紧接选段之后自然续写，保持文风、人称与人设一致，只输出续写正文。' }
+    { kind: 'polish', name: '润色', instruction: '在保持原意、人称与专有名词的前提下，让文字更凝练、更有画面感。只输出润色后的正文，不要解释、不加标题。' },
+    { kind: 'expand', name: '扩写', instruction: '在不改变剧情的前提下，扩写动作、感官与心理细节，篇幅约为原文的 1.5–2 倍。只输出扩写后的正文，不要附写作说明。' },
+    { kind: 'condense', name: '缩写', instruction: '压缩冗余表述，保留关键情节、所有伏笔信息与全部人物对话要点，篇幅约为原文的一半。只输出压缩后的正文。' },
+    { kind: 'dialogue', name: '转对话', instruction: '把叙述改写为人物对话，突出各自语气与潜台词，不要添加旁白解释。只输出改写后的对话正文。' },
+    { kind: 'continue', name: '续写', instruction: '紧接选段之后自然续写，保持文风、人称与人设一致，只输出续写正文，不总结、不预告后事。' }
   ];
 
   function head(title, backHash) {
@@ -42,10 +42,11 @@
       + (backHash ? '<button class="back" data-back="' + esc(backHash) + '">‹ 返回</button>' : '<span class="brand">AI 写作助手</span>')
       + '<h1 class="htitle">' + esc(title) + '</h1><span class="sp"></span></header>';
   }
-  // 全局返回：绑定 [data-back]
+  // 全局返回：[data-back] 与系统返回键共用 App().navigateUp() 单一入口（行为严格一致）；
+  // data-back 作为精确目标 hint 传入，无 hint 时 navigateUp 自行从当前 hash 逐级推导。
   function wireBack() {
     [].forEach.call(screen().querySelectorAll('[data-back]'), function (b) {
-      on(b, 'click', function () { App().go(b.getAttribute('data-back')); });
+      on(b, 'click', function () { App().navigateUp(b.getAttribute('data-back')); });
     });
   }
   function findBook(bookId) {
@@ -205,12 +206,13 @@
   }
 
   // ---- 章节（默认分段，保留旧列表 + 新建 + 导出）----
+  // 头部上下结构（建议 1）：标题独占一行，操作按钮另起一行左对齐，不再用 .secrow 左右两端顶挤。
   function renderBookChapters(body, bk, bookId) {
     DB.listChapters(bookId).then(function (chs) {
-      var head = '<div class="secrow"><span class="st">章节（' + chs.length + '）</span>'
-        + (chs.length ? '<span><button class="primary" id="newCh">＋ 新建</button> <button id="exportBtn">⬇ 导出</button></span>'
-                      : '<button id="exportBtn">⬇ 导出</button>')
-        + '</div>';
+      var head = '<div class="sec-head"><span class="st">章节（' + chs.length + '）</span></div>'
+        + '<div class="sec-actions">'
+        + (chs.length ? '<button class="primary" id="newCh">＋ 新建</button>' : '')
+        + '<button id="exportBtn">⬇ 导出</button></div>';
       var list = chs.length
         ? '<ul class="list">' + chs.map(function (c) {
             return '<li class="card" data-open="#/chapter/' + c.id + '">'
@@ -242,8 +244,8 @@
       return DB.listSections(chapterId).then(function (secs) {
         screen().innerHTML = head(ch.title || '章节', '#/book/' + bookId + '/chapters')
           + '<div class="body">'
-          + '<div class="secrow"><span class="st">' + esc(ch.title || ('第' + ch.idx + '章')) + ' · ' + secs.length + ' 节</span>'
-          + (secs.length ? '<button class="primary" id="newSec">＋ 新建节</button>' : '') + '</div>'
+          + '<div class="sec-head"><span class="st">' + esc(ch.title || ('第' + ch.idx + '章')) + ' · ' + secs.length + ' 节</span></div>'
+          + (secs.length ? '<div class="sec-actions"><button class="primary" id="newSec">＋ 新建节</button></div>' : '')
           + '<div class="row"><button class="ghost" id="editChBody">✎ 直接写本章正文</button></div>'
           + (secs.length
               ? '<ul class="list">' + secs.map(function (s) {
@@ -269,6 +271,44 @@
     });
   }
 
+  // 导出成功弹层（建议 4）：不再用瞬时 toast 收尾，明确告知格式/文件名清单/落点路径，
+  // 并提供“分享／保存到手机”（原生 Share+Filesystem 可用时）与“复制路径”后续动作。
+  // 落点口径与“存储”页一致：应用私有目录 / temp / export/。
+  function nativeSharePlugins() {
+    var P = root.Capacitor && root.Capacitor.Plugins;
+    return (P && P.Share && P.Filesystem) ? { share: P.Share, fs: P.Filesystem } : null;
+  }
+  function showExportDone(bk, r) {
+    var fmtName = { txt: '纯文本 txt', docx: 'Word docx', zip: '作品包 zip' }[r.format] || r.format;
+    var NS = nativeSharePlugins();
+    var html = '<div class="sh-title">导出成功 · ' + esc(fmtName) + '</div>'
+      + '<ul class="list">' + r.files.map(function (f) {
+          return '<li class="card"><div class="ct">' + esc(f.name) + '</div>'
+            + '<div class="cs">' + esc(f.rel) + (f.bytes ? ' · ' + Math.max(1, Math.round(f.bytes / 1024)) + ' KB' : '') + '</div></li>';
+        }).join('') + '</ul>'
+      + '<div class="note">文件落在<b>应用私有目录 / temp / export/</b>（即上方列表中的路径，相对应用数据根目录）。'
+      + '私有目录不向系统文件管理器开放，找不到文件属正常现象：请点“分享／保存到手机”写入手机存储，或复制路径在应用内查看。</div>'
+      + '<div class="row">'
+      + (NS ? '<button class="primary" data-exshare>分享／保存到手机</button>' : '')
+      + '<button data-excopy>复制路径</button><button class="ghost" data-closesheet>知道了</button></div>'
+      + (NS ? '' : '<div class="hint">本机未接入原生分享，可先用“复制路径”记下位置，待原生层接入后可一键另存到手机。</div>');
+    var panel = openSheet('exportDone', html);
+    var firstRel = r.files.length ? r.files[0].rel : 'temp/export/';
+    on(panel.querySelector('[data-excopy]'), 'click', function () { copyText(firstRel); });
+    var sb = panel.querySelector('[data-exshare]');
+    on(sb, 'click', function () {
+      sb.disabled = true;
+      // temp 相对路径 → Filesystem.getUri 解析为绝对 file:// URI → 系统分享面板（可另存 Downloads/云盘）
+      Promise.all(r.files.map(function (f) { return NS.fs.getUri({ path: f.rel, directory: 'data' }); }))
+        .then(function (uris) {
+          return NS.share({ files: uris.map(function (u) { return u.uri; }), dialogTitle: '导出《' + (bk.title || '作品') + '》' });
+        })
+        .then(function () { sb.disabled = false; }, function (e) {
+          sb.disabled = false; App().toast('分享失败：' + ((e && e.message) || e) + '，可先复制路径', 'bad');
+        });
+    });
+  }
+
   // 导出弹层（F41/42/44）：txt / docx / 作品包 zip；txt 可勾选同时出分章
   function openExportSheet(bk, bookId) {
     var panel = openSheet('exSheet', '<div class="sh-title">导出《' + esc(bk.title || '作品') + '》</div><ul class="list">'
@@ -284,8 +324,8 @@
         if (!needTemp()) return;
         App().toast('正在导出…');
         DA().exportBook(dataDeps(), { bookId: bookId, format: li.getAttribute('data-fmt'), splitChapters: split })
-          .then(function (r) { App().toast('已导出 ' + r.files.length + ' 个文件→ temp/export/', 'ok'); },
-                function (e) { App().toast('导出失败：' + (e.message || e), 'bad'); });
+          .then(function (r) { showExportDone(bk, r); },
+                function (e) { App().toast('导出失败：' + (e.message || e) + '，可重试', 'bad'); });
       });
     });
   }
@@ -457,10 +497,12 @@
         var book = rs[0], characters = rs[1], api = rs[2], ctx = rs[3];
 
         var html = head(store.label, store.backHash()) + '<div class="body editor">'
+          // 顶栏（建议 3）：标题不再无限拉伸；字数·保存态·版本包成 .chbar-meta 元信息组，紧跟标题左对齐起排
           + '<div class="chbar"><input id="chTitle" class="tin" value="' + esc(ch.title || '') + '" placeholder="' + store.titlePh + '">'
-          + '<span class="wc" id="wc">' + (ch.word_count || 0) + ' 字</span>'
+          + '<div class="chbar-meta"><span class="wc" id="wc">' + (ch.word_count || 0) + ' 字</span>'
+          + '<span class="mdot">·</span>'
           + '<span class="save" id="saveTag">已保存</span>'
-          + (store.hasVersion ? '<button id="verBtn">版本</button>' : '') + '</div>'
+          + (store.hasVersion ? '<button id="verBtn" class="verbtn">版本</button>' : '') + '</div></div>'
           + '<textarea id="body" class="ta" placeholder="在这里写正文，选中一段再点右下角 ✦ AI 动作…">' + esc(ch.body || '') + '</textarea>'
           + '<div class="fab-wrap" id="fabWrap">'
           + '<div class="fab-menu" id="fabMenu">'
@@ -523,9 +565,9 @@
           return root.NOVEL_UTIL.clampRange(s, e, v.length);
         }
 
-        // ---- 运行一个动作 ----
+        // ---- 运行一个动作（userHint：本次操作的临时补充要求，可选；拼进 [指令] 且随选段/指令永不裁）----
         var running = null;
-        function runAction(tpl) {
+        function runAction(tpl, userHint) {
           if (running) { App().toast('上一条还在进行…'); return; }
           // 未配置真实模型/Key：拦截提示（不再静默走 mock 回显）
           var rd = App().apiReady(api);
@@ -548,6 +590,7 @@
           var args = {
             book: book || { id: bookId }, chapter: ch, characters: characters, settings: ctx,
             api: api, template: tpl,
+            userHint: String(userHint || '').slice(0, 500),
             selection: { start: sel.start, end: sel.end, text: v.slice(sel.start, sel.end) },
             before: v.slice(0, sel.start), after: v.slice(sel.end),
             onDelta: function (txt, full) { pvBody.textContent = full; ta.scrollTop = ta.scrollHeight; }
@@ -567,7 +610,7 @@
               pvFoot.innerHTML = '<button data-retry>重试</button><button data-close>关闭</button>';
               pvMeta.textContent = (res && res.reason) || '未知错误';
               q('#pvFoot [data-close]') && on(q('#pvFoot [data-close]'), 'click', closePreview);
-              on(q('#pvFoot [data-retry]'), 'click', function () { runAction(tpl); });
+              on(q('#pvFoot [data-retry]'), 'click', function () { runAction(tpl, userHint); });
               return;
             }
             if (useConsistency) return showConsistency(res);
@@ -585,7 +628,29 @@
             pvBody.textContent = ''; pvMeta.textContent = e && e.message || e;
             pvFoot.innerHTML = '<button data-retry>重试</button><button data-close>关闭</button>';
             on(q('#pvFoot [data-close]'), 'click', closePreview);
-            on(q('#pvFoot [data-retry]'), 'click', function () { runAction(tpl); });
+            on(q('#pvFoot [data-retry]'), 'click', function () { runAction(tpl, userHint); });
+          });
+        }
+
+        // ---- 动作发起前的“补充要求（可选）”小弹层（建议 7）：留空则与现状一致 ----
+        var HINT_PH = {
+          polish: '例如：更凝练 / 更有画面感 / 少用形容词',
+          expand: '例如：补心理与环境细节 / 加一段动作戏',
+          condense: '例如：只保留对话与关键动作',
+          dialogue: '例如：让对白更锋利、带潜台词',
+          continue: '例如：不要太狗血 / 埋一个伏笔',
+          consistency: '例如：重点检查时间线与称呼'
+        };
+        function askHintThenRun(tpl) {
+          if (!tpl) return;
+          var panel = openSheet('hintSheet', '<div class="sh-title">' + esc(tpl.name) + ' · 补充要求（可选）</div>'
+            + '<textarea id="hintTa" rows="3" maxlength="500" placeholder="' + esc(HINT_PH[tpl.kind] || '例如：更口语化 / 补充环境细节') + '"></textarea>'
+            + '<div class="hint">会追加到指令后随本次请求发出（≤500 字，超预算也不会被裁剪）；留空按内置指令执行。</div>'
+            + '<div class="row"><button class="primary" data-hintgo>开始</button><button class="ghost" data-closesheet>取消</button></div>');
+          on(panel.querySelector('[data-hintgo]'), 'click', function () {
+            var h = String(panel.querySelector('#hintTa').value || '').trim().slice(0, 500);
+            closeSheet('hintSheet');
+            runAction(tpl, h);
           });
         }
 
@@ -664,6 +729,7 @@
           q('#sheet').hidden = false;
           panel.innerHTML = '<div class="sh-title">AI 查找（资料问答，不改动正文）</div>'
             + '<textarea id="qText" class="qta" rows="4" placeholder="想查什么？例如：唐代科举流程、某种枪械的有效射程…"></textarea>'
+            + '<div class="fld"><label>补充要求（可选）</label><textarea id="qHint" rows="2" maxlength="500" placeholder="例如：按时间线分点、附出处常识、给写作建议"></textarea></div>'
             + '<div class="row"><button class="ghost" data-closesheet>取消</button><button class="primary" id="askGo">提问</button></div>';
           [].forEach.call(q('#sheet').querySelectorAll('[data-closesheet]'), function (x) {
             on(x, 'click', function () { q('#sheet').hidden = true; });
@@ -671,21 +737,26 @@
           on(q('#askGo'), 'click', function () {
             var qq = q('#qText').value.trim();
             if (!qq) { App().toast('请输入要查找的问题', 'warn'); return; }
+            var qh = String(q('#qHint').value || '').trim().slice(0, 500);
             q('#sheet').hidden = true;
-            runQuery(qq);
+            runQuery(qq, qh);
           });
         }
-        function runQuery(question) {
+        function runQuery(question, userHint) {
           var rd = App().apiReady(api);   // 同样受配置门禁
           if (!rd.ok) { App().toast(rd.why, 'warn'); return; }
           if (running) { App().toast('上一条还在进行…'); return; }
-          var tpl = { kind: 'query', name: 'AI查找', instruction: '直接回答下面的问题，只给答案与必要说明，不要改写或续写任何正文。' };
+          // 检索式模板（建议 7）：明确要求围绕主题详细展开、可分点、附背景与关键事实；仍只答不写回
+          var tpl = { kind: 'query', name: 'AI查找',
+            instruction: '请围绕以下主题进行检索并给出尽可能详细的说明：可分点列出，附背景、关键事实与容易写错的细节；' +
+              '只回答查询主题本身，不要改写或续写任何正文。' };
           pv.hidden = false; pvBody.textContent = ''; pvMeta.textContent = '';
           pvTitle.textContent = 'AI查找 · 查询中…'; pvFoot.innerHTML = '<button class="ghost" data-stop>■ 停止</button>';
           var t0 = Date.now();
           var qSettings = { use_summary: false, inject_prev_summary: false, inject_taboos: false, token_budget: (ctx && ctx.token_budget) || 6000, prev_paras: 0, next_paras: 0 };
           var args = {
             book: { id: bookId }, chapter: ch, characters: [], settings: qSettings, api: api, template: tpl,
+            userHint: String(userHint || '').slice(0, 500),
             selection: { start: 0, end: 0, text: question }, before: '', after: '',
             onDelta: function (txt, full) { pvBody.textContent = full; }
           };
@@ -698,7 +769,7 @@
             if (!res || !res.ok) {
               pvTitle.textContent = 'AI查找 · 失败'; pvBody.textContent = ''; pvMeta.textContent = (res && res.reason) || '未知错误';
               pvFoot.innerHTML = '<button data-retry>重试</button><button data-close>关闭</button>';
-              on(q('#pvFoot [data-retry]'), 'click', function () { runQuery(question); });
+              on(q('#pvFoot [data-retry]'), 'click', function () { runQuery(question, userHint); });
               on(q('#pvFoot [data-close]'), 'click', closePreview);
               return;
             }
@@ -722,7 +793,7 @@
           on(b, 'click', function () {
             fabWrap.classList.remove('open');
             var kind = b.getAttribute('data-kind');
-            runAction(BUILTIN.filter(function (x) { return x.kind === kind; })[0]);
+            askHintThenRun(BUILTIN.filter(function (x) { return x.kind === kind; })[0]);
           });
         });
         [].forEach.call(fabWrap.querySelectorAll('.fab-item[data-act]'), function (b) {
@@ -735,7 +806,7 @@
           });
         });
         on(q('#moreAct'), 'click', function () { fabWrap.classList.remove('open'); openMore(bookId); });
-        App()._runAction = runAction;   // 供“更多”弹层（在编辑器闭包外）回调
+        App()._runAction = askHintThenRun;   // 供“更多”弹层（在编辑器闭包外）回调；同样先过补充要求弹层
         q('#pvFoot') && on(pv, 'click', function (e) { if (e.target.getAttribute && e.target.getAttribute('data-close') != null) closePreview(); });
 
         // ---- 版本/快照弹层（F09，仅章级）----
@@ -768,7 +839,7 @@
         on(li, 'click', function () {
           q('#sheet').hidden = true;
           root.NOVEL_VIEWS._pendingTpl = list[+li.getAttribute('data-i')];
-          // 复用编辑器 runAction：通过全局桥接（editor 已把 runAction 暴露为 App 内联函数）
+          // 复用编辑器发起链路：先过“补充要求（可选）”，再执行（App._runAction 已接 askHintThenRun）
           if (App()._runAction) App()._runAction(root.NOVEL_VIEWS._pendingTpl);
         });
       });
@@ -853,27 +924,55 @@
     });
   }
 
-  /* ================= 我的 F50：竖向页签（AI助手 / 存储 / 界面设置 / 数据与安全） ================= */
+  /* ================= 我的 F50：竖向页签（AI助手 / 存储 / 界面设置 / 导入书籍 / 数据与安全 / 问题反馈） ================= */
   var ME_TABS = [
     { key: 'ai', label: 'AI 助手' },
     { key: 'storage', label: '存储' },
     { key: 'appearance', label: '界面设置' },
-    { key: 'data', label: '数据与安全' }
+    { key: 'import', label: '导入书籍' },
+    { key: 'data', label: '数据与安全' },
+    { key: 'feedback', label: '问题反馈' }
   ];
+  // 反馈与说明（建议 8）：邮箱唯一常量，反馈页与用户说明弹层共用，避免两处口径不一
+  var FEEDBACK_EMAIL = '3620522389@qq.com';
+  var APP_VERSION = 'v3.22';
+
+  // 用户说明弹层（常驻“我的”底部居中入口）：隐私免责 + 提交规则 + 版本版权
+  function openUserDoc() {
+    openSheet('userDoc', '<div class="sh-title">用户说明 · 隐私与免责</div><div class="doc">'
+      + '<h3>隐私与数据安全</h3>'
+      + '<p>· 本应用是纯本地写作工具，无需登录注册。</p>'
+      + '<p>· 作品数据（书籍/章节/人物/设定等）只保存在手机本机应用私有目录，不上传任何服务器。</p>'
+      + '<p>· API Key 经 Android Keystore（AES-GCM）加密保存，绝不明文进入数据库、备份包或日志。</p>'
+      + '<p>· 备份包不含密钥；派生产物只落在私有目录 temp/ 内，可在“存储”页一键清理。</p>'
+      + '<p>· 使用 AI 功能时，仅把拼装后的提示词（含选段与必要上下文）发送给您自行配置的服务商；未配置时不会发出任何网络请求。</p>'
+      + '<h3>问题反馈与提交规则</h3>'
+      + '<p>· 建议与 bug 请发送至 ' + FEEDBACK_EMAIL + '，请附上版本号与复现步骤。</p>'
+      + '<p>· 邮箱为唯一反馈渠道，响应不作时效承诺；不接收与写作无关的商业信息。</p>'
+      + '<h3>其他</h3>'
+      + '<p>· AI 生成内容仅供参考，发布前请自行审校与合规检查。</p>'
+      + '<div class="doc-foot">当前版本 ' + APP_VERSION + ' · © 2026 AI 写作助手</div></div>');
+  }
+
   function me(p) {
     var tab = (p && p.tab) || 'ai';
     var navHtml = ME_TABS.map(function (t) {
       return '<button class="vbtn' + (t.key === tab ? ' active' : '') + '" data-me-nav="' + t.key + '">' + esc(t.label) + '</button>';
     }).join('');
+    // 底部常驻居中“用户说明”入口（不属任何单页，点开 .sheet 弹层，不用原生弹窗）
     screen().innerHTML = head('我的', '')
-      + '<div class="vwrap"><nav class="vnav">' + navHtml + '</nav><div class="vpanel" id="meBody"></div></div>';
+      + '<div class="vwrap"><nav class="vnav">' + navHtml + '</nav><div class="vpanel" id="meBody"></div></div>'
+      + '<div class="me-foot"><button id="userDocBtn">用户说明 · 隐私与免责</button></div>';
     wireBack();
+    on(q('#userDocBtn'), 'click', openUserDoc);
     [].forEach.call(screen().querySelectorAll('[data-me-nav]'), function (b) {
       on(b, 'click', function () { App().go('#/me/' + b.getAttribute('data-me-nav')); });
     });
     var body = q('#meBody');
     if (tab === 'storage') renderMeStorage(body);
     else if (tab === 'appearance') renderMeAppearance(body);
+    else if (tab === 'import') renderMeImport(body);
+    else if (tab === 'feedback') renderMeFeedback(body);
     else if (tab === 'data') renderMeData(body);
     else renderMeAi(body);
   }
@@ -1034,10 +1133,10 @@
     });
   }
 
-  // 数据与安全（备份/恢复/导入 + 运行自检）
+  // 数据与安全（备份/恢复/运行自检）——导入已拆到独立“导入书籍”页签（建议 5），本页不再放导入表单
   function renderMeData(body) {
     var rep = App().state.report || {};
-    body.innerHTML = '<div class="secrow"><span class="st">数据与安全</span></div><div class="form">'
+    body.innerHTML = '<div class="sec-head"><span class="st">数据与安全</span></div><div class="form">'
       + '<div class="row"><button id="backupBtn">立即备份</button><button id="restoreBtn">恢复最近备份</button></div>'
       + '<div class="note">备份/恢复只作用于本地库；产物落私有目录 temp/backup/，密钥绝不入包。写 Downloads/分享需原生层，待接。</div>'
       + '<h2 class="sec">运行自检</h2><pre class="probe">' + esc(
@@ -1045,10 +1144,6 @@
         + ' | 加密: ' + (rep.secure && rep.secure.status)
         + ' | 暂存: ' + (rep.temp && rep.temp.status)
         + ' | 插件: ' + (rep.plugins || []).join(',')) + '</pre>'
-      + '<h2 class="sec">导入已有文稿</h2>'
-      + '<div class="fld"><label>书名</label><input id="impTitle" placeholder="导入的作品标题"></div>'
-      + '<div class="fld"><label>正文（自动按“第X章”分章；无章标题则按空行分块）</label><textarea id="impBody" rows="5" placeholder="粘贴已有小说正文…"></textarea></div>'
-      + '<div class="row"><button class="primary" id="doImport">导入并建新书</button></div>'
       + '</div>';
     on(q('#backupBtn'), 'click', function () {
       if (!needTemp()) return;
@@ -1071,16 +1166,160 @@
         });
       });
     });
-    on(q('#doImport'), 'click', function () {
-      var body2 = q('#impBody').value;
-      if (!body2.trim()) { App().toast('请先粘贴要导入的正文', 'warn'); return; }
-      App().toast('导入中…');
-      DA().importBook(dataDeps(), { title: q('#impTitle').value.trim(), text: body2 }).then(function (r) {
-        App().toast('已导入 ' + r.chapters + ' 章', 'ok');
-        App().go('#/book/' + r.bookId);
-      }, function (e) { App().toast('导入失败：' + (e.message || e), 'bad'); });
+  }
+
+  /* ================= 导入书籍（建议 5 独立成页 + 建议 6 可并入指定书） =================
+     两种模式：新建书籍（建书→逐章落正文）/ 并入现有（不建书，按识别标题顺序向书末追加，
+     不跑去重/覆盖；重名仅提示）。落库前先“预检”：展示识别章数与标题示例，二次确认后执行。 */
+  function renderMeImport(body) {
+    DB.listBooks().then(function (books) {
+      var canMerge = books.length > 0;
+      var curBookId = App().state.bookId ? String(App().state.bookId) : '';
+      body.innerHTML = '<div class="sec-head"><span class="st">导入书籍</span></div><div class="form">'
+        + '<div class="fld"><label>导入到</label><div class="radiogroup">'
+        + '<label class="radio"><input type="radio" name="impMode" value="new" checked> 新建书籍</label>'
+        + '<label class="radio"><input type="radio" name="impMode" value="merge"' + (canMerge ? '' : ' disabled') + '> 并入现有书籍</label>'
+        + '</div>' + (canMerge ? '' : '<div class="hint">还没有任何书籍，“并入现有书籍”需先新建一本。</div>') + '</div>'
+        + '<div class="fld" id="fldTitle"><label>书名</label><input id="impTitle" placeholder="导入的作品标题"></div>'
+        + '<div class="fld" id="fldBook" hidden><label>目标书籍</label><select id="impBook">'
+        + books.map(function (b) {
+            return '<option value="' + b.id + '"' + (String(b.id) === curBookId ? ' selected' : '') + '>' + esc(b.title || '未命名') + '</option>';
+          }).join('') + '</select><div class="hint" id="bookStat"></div></div>'
+        + '<div class="fld"><label>正文（自动按“第X章”分章；无章标题则按空行分块）</label><textarea id="impBody" rows="6" placeholder="粘贴已有小说正文…"></textarea></div>'
+        + '<div class="row"><button class="primary" id="preCheckBtn">预检（识别章数）</button><button id="doImport" disabled>确认导入</button></div>'
+        + '<div class="note">预检只识别不写库；确认后才落库。并入模式只在书末追加新章节，绝不改动既有章节；重名标题仅提示，不自动合并。</div>'
+        + '</div>';
+
+      // 模式切换：新建→书名输入；并入→目标书下拉（禁用/隐藏书名）
+      function mode() { var r = body.querySelector('input[name="impMode"]:checked'); return r ? r.value : 'new'; }
+      function toggleFields() {
+        var merge = mode() === 'merge';
+        q('#fldTitle').hidden = merge;
+        q('#fldBook').hidden = !merge;
+        showBookStat();
+      }
+      // 目标书统计：“书名（N 章 · M 字）”口径展示在下方提示
+      function showBookStat() {
+        if (mode() !== 'merge') { q('#bookStat').textContent = ''; return; }
+        var bid = q('#impBook').value;
+        DB.listChapters(bid).then(function (chs) {
+          var words = chs.reduce(function (a, c) { return a + (c.word_count || 0); }, 0);
+          q('#bookStat').textContent = '当前选择：' + chs.length + ' 章 · ' + words + ' 字，导入将追加到第 ' + (chs.length + 1) + ' 章起。';
+        });
+      }
+      [].forEach.call(body.querySelectorAll('input[name="impMode"]'), function (r) { on(r, 'change', toggleFields); });
+      on(q('#impBook'), 'change', showBookStat);
+      toggleFields();
+
+      // 预检：纯本地分章（与 dataActions 同一套 NOVEL_IMPORTER 规则），展示章数+标题示例后二次确认；
+      // 并入模式额外比对现有章标题，重名只提示不自动合并（保守策略，避免误改既有章）
+      var pending = null;   // { parts, mode, bookId, title, text }
+      on(q('#preCheckBtn'), 'click', function () {
+        var text = String(q('#impBody').value || '');
+        if (!text.trim()) { App().toast('请先粘贴要导入的正文', 'warn'); return; }
+        var IMP = root.NOVEL_IMPORTER;
+        var parts = IMP.looksChaptered(text) ? IMP.split(text) : IMP.blankSplit(text);
+        if (!parts.length) parts = [{ title: '', body: text.trim() }];
+        var m = mode();
+        var title = (q('#impTitle').value || '').trim() || '导入作品';
+        var bookId = m === 'merge' ? q('#impBook').value : '';
+        if (m === 'merge') {
+          DB.listChapters(bookId).then(function (chs) {
+            var exist = {};
+            chs.forEach(function (c) { if (c.title) exist[String(c.title).trim()] = true; });
+            var dups = [];
+            parts.forEach(function (p) { if (p.title && exist[p.title.trim()]) dups.push(p.title.trim()); });
+            showPreCheck(parts, m, bookId, title, text, dups);
+          });
+        } else {
+          showPreCheck(parts, m, bookId, title, text, []);
+        }
+      });
+      function showPreCheck(parts, m, bookId, title, text, dups) {
+        var actDesc = m === 'merge'
+          ? '将向《' + esc((findOptionText(bookId) || '')) + '》追加 ' + parts.length + ' 章，原有章节不改动。'
+          : '《' + esc(title) + '》将新建 ' + parts.length + ' 章。';
+        var dupNote = dups.length
+          ? '<div class="note">⚠ 有 ' + dups.length + ' 个标题与现有章节重名（' + esc(dups.slice(0, 3).join('、')) + (dups.length > 3 ? '…' : '')
+            + '），将按新章追加，不自动合并。</div>' : '';
+        var pre = parts.slice(0, 5).map(function (p, i) { return (i + 1) + '. ' + esc(p.title || '（无题，按块）'); }).join('<br>');
+        if (parts.length > 5) pre += '<br>… 共 ' + parts.length + ' 章';
+        var panel = openSheet('importConfirm', '<div class="sh-title">导入预检</div>'
+          + '<div class="note">识别到 <b>' + parts.length + '</b> 章。' + actDesc + '</div>'
+          + '<div class="probe">' + pre + '</div>' + dupNote
+          + '<div class="row"><button class="primary" data-icok>确认导入</button><button class="ghost" data-closesheet>取消</button></div>');
+        pending = { parts: parts, mode: m, bookId: bookId, title: title, text: text };
+        q('#doImport').disabled = false;   // 预检通过后允许确认/重试同一结果
+        on(panel.querySelector('[data-icok]'), 'click', function () { closeSheet('importConfirm'); doImport(pending); });
+      }
+      function findOptionText(bid) {
+        var sel = q('#impBook');
+        for (var i = 0; i < sel.options.length; i++) if (sel.options[i].value === String(bid)) return sel.options[i].text;
+        return '';
+      }
+
+      // 执行导入：逐章链式写入；中途失败给“已成功 k/n 章 + 原因”，保持预检结果可直接重试（幂等续跑暂以整体重来为主）
+      function doImport(pk) {
+        App().toast('导入中…');
+        DA().importBook(dataDeps(), { mode: pk.mode, bookId: pk.bookId, title: pk.title, text: pk.text }).then(function (r) {
+          pending = null;
+          q('#doImport').disabled = true;
+          App().toast((r.mode === 'merge' ? '已向原书追加 ' : '已导入并建新书，共 ') + r.chapters + ' 章', 'ok');
+          App().go('#/book/' + r.bookId + '/chapters');
+        }, function (e) {
+          var part = (e && e.imported != null) ? '（已成功 ' + e.imported + '/' + e.total + ' 章，可修正后重试）' : '';
+          App().toast('导入失败：' + ((e && e.message) || e) + part, 'bad');
+        });
+      }
+      // 确认后按钮才允许直接重放同一预检结果（防误导入：未预检不可落库）
+      on(q('#doImport'), 'click', function () {
+        if (!pending) { App().toast('请先点“预检”确认章数', 'warn'); return; }
+        doImport(pending);
+      });
+      on(q('#impBody'), 'input', function () { pending = null; q('#doImport').disabled = true; });
     });
   }
 
-  root.NOVEL_VIEWS = { shelf: shelf, book: book, chapter: chapter, editor: editor, section: section, me: me, BUILTIN: BUILTIN };
+  /* ================= 问题反馈（建议 8）：邮箱展示/复制 + mailto 发信（不支持时降级复制） ================= */
+  function renderMeFeedback(body) {
+    body.innerHTML = '<div class="sec-head"><span class="st">问题反馈</span></div><div class="form">'
+      + '<div class="note">欢迎提出建议或提交 bug。请附上版本号与复现步骤，方便定位；邮箱是唯一反馈渠道，响应不作时效承诺。</div>'
+      + '<div class="fld"><label>开发者邮箱</label><div class="fb-mail" id="fbMailText">' + FEEDBACK_EMAIL + '</div></div>'
+      + '<div class="row"><button id="fbCopy">复制邮箱</button><button class="primary" id="fbOpen">打开发送邮件</button></div>'
+      + '<h2 class="sec">反馈模板（可选，自动带入邮件正文）</h2>'
+      + '<div class="fld"><label>类型</label><select id="fbKind"><option>建议</option><option>bug</option></select></div>'
+      + '<div class="fld"><label>内容 / 复现步骤</label><textarea id="fbText" rows="4" placeholder="发生了什么？期望是什么？"></textarea></div>'
+      + '<div class="row"><button class="primary" id="fbCompose">生成邮件并发送</button></div>'
+      + '<div class="hint">机型/系统与 App 版本会自动附加。若本机未安装邮件应用，会降级为“已复制邮箱与内容，请手动发送”。</div>'
+      + '</div>';
+    on(q('#fbCopy'), 'click', function () { copyText(FEEDBACK_EMAIL); });
+    // mailto 拉起系统邮件 App；WebView 不支持时无法探测成败，统一先备一份剪贴板内容供手动粘贴
+    function openMailto(subject, content) {
+      copyText(FEEDBACK_EMAIL + '\n' + content);
+      try {
+        var a = root.document.createElement('a');
+        a.href = 'mailto:' + FEEDBACK_EMAIL + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(content);
+        root.document.body.appendChild(a); a.click(); root.document.body.removeChild(a);
+        App().toast('已拉起邮件（若无反应，邮箱与内容已复制，请手动发送）', 'ok');
+      } catch (e) {
+        App().toast('本机不支持直接发信：邮箱与内容已复制，请手动发送', 'warn');
+      }
+    }
+    on(q('#fbOpen'), 'click', function () { openMailto('[反馈] AI 写作助手', '反馈类型：\nApp 版本：' + APP_VERSION + '\n机型/系统：' + deviceInfo() + '\n内容：'); });
+    on(q('#fbCompose'), 'click', function () {
+      var kind = q('#fbKind').value;
+      var txt = String(q('#fbText').value || '').trim();
+      if (!txt) { App().toast('请先填写反馈内容', 'warn'); return; }
+      var head2 = kind === 'bug'
+        ? '反馈类型：bug\nApp 版本：' + APP_VERSION + '\n机型/系统：' + deviceInfo() + '\n复现步骤与期望：'
+        : '反馈类型：建议\nApp 版本：' + APP_VERSION + '\n机型/系统：' + deviceInfo() + '\n建议内容：';
+      openMailto('[' + kind + '] AI 写作助手反馈', head2 + '\n' + txt);
+    });
+  }
+  function deviceInfo() {
+    try { return String((root.navigator && root.navigator.userAgent) || '未知设备'); } catch (e) { return '未知设备'; }
+  }
+
+  root.NOVEL_VIEWS = { shelf: shelf, book: book, chapter: chapter, editor: editor, section: section, me: me,
+    BUILTIN: BUILTIN, ME_TABS: ME_TABS, FEEDBACK_EMAIL: FEEDBACK_EMAIL };
 })(globalThis);

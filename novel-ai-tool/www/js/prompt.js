@@ -54,6 +54,7 @@
   //   book:{synopsis,style_note}, chapterSummary, prevSummary,
   //   selection, beforeText, afterText, matchText, characters:[...],
   //   template:{name,instruction,use_summary},
+  //   userHint(本次操作的可选补充要求，≤500 字，拼进[指令]且永不裁),
   //   settings:{use_summary,inject_taboos,inject_prev_summary,token_budget,prev_paras,next_paras}
   // }
   function build(ctx) {
@@ -66,6 +67,9 @@
 
     var selection = String(ctx.selection || '');
     var instruction = (ctx.template && ctx.template.instruction) || '按要求处理下文。';
+    // 用户补充要求（F20–F24 体验增强）：限长 500 字防膨胀；随指令归入永不裁剪层
+    var userHint = String(ctx.userHint || '').trim().slice(0, 500);
+    if (userHint) instruction += '\n用户的补充要求：' + userHint;
 
     // 各可选层（携带裁剪元数据）
     var useSummary = st.use_summary && ctx.template && ctx.template.use_summary !== undefined

@@ -82,26 +82,60 @@
     return { title: b.book.title, chapters: b.chapters.length, words: b.totalWords, characters: b.characters.length };
   }
 
-  // 导入：把一段纯文本按章切分后建书 + 逐章落正文（reason='import'，首章覆盖空正文不快照）
+  // 导入：把一段纯文本按章切分后落库。两种模式（建议 6）：
+  //   mode='new'（默认）：建新书 → 逐章落正文（reason='import'，首章覆盖空正文不快照）
+  //   mode='merge'：不建书；校验 bookId 存在后向该书末尾按序追加章节（idx 由 createChapter 取 MAX+1），
+  //     不跑去重/覆盖：与既有章重名也只追加，原章正文绝不动。
+  // 两模式统一先跑分章（looksChaptered ? split : blankSplit）再决定落库目标；
+  // 逐章链式写入，中途失败 reject 带 imported/total 供 UI 报“已成功 k/n 章 + 重试”。
   function importBook(deps, opts) {
     opts = opts || {};
+    var mode = opts.mode === 'merge' ? 'merge' : 'new';
     var IMP = mod('NOVEL_IMPORTER'), DBp = deps.db;
     if (!IMP) return Promise.reject(new Error('导入需要 NOVEL_IMPORTER'));
     var text = String(opts.text == null ? '' : opts.text);
     if (!text.trim()) return Promise.reject(new Error('导入内容为空'));
     var parts = IMP.looksChaptered(text) ? IMP.split(text) : IMP.blankSplit(text);
     if (!parts.length) parts = [{ title: '', body: text.trim() }];
-    var title = (opts.title && String(opts.title).trim()) || '导入作品';
-    return DBp.createBook({ title: title, synopsis: opts.synopsis || '' }).then(function (bookId) {
+
+    // 逐章链式写入 bookId 目标书；done 记录已成功章数，失败时挂到错误对象上供可读重试
+    function writeChains(bookId, baseIdx) {
+      var done = 0, total = parts.length;
       var chain = Promise.resolve(0);
       parts.forEach(function (pt, i) {
-        chain = chain.then(function (n) {
-          return DBp.createChapter(bookId, pt.title || '第' + (i + 1) + '章').then(function (cid) {
-            return DBp.saveChapterBody(cid, pt.body || '', 'import').then(function () { return n + 1; });
+        chain = chain.then(function () {
+          return DBp.createChapter(bookId, pt.title || '第' + (baseIdx + i + 1) + '章').then(function (cid) {
+            return DBp.saveChapterBody(cid, pt.body || '', 'import').then(function () { done++; });
           });
         });
       });
-      return chain.then(function (n) { return { bookId: bookId, chapters: n, title: title }; });
+      return chain.then(function () { return done; }, function (e) {
+        // 非 Error 拒绝值（字符串等）归一后再挂进度，严格模式下不可直接给原始值加属性
+        var err = e instanceof Error ? e : new Error((e && e.message) || String(e || '导入失败'));
+        err.imported = done; err.total = total;
+        throw err;
+      });
+    }
+
+    if (mode === 'merge') {
+      if (opts.bookId == null || String(opts.bookId) === '') return Promise.reject(new Error('并入模式需要选择目标书籍'));
+      return DBp.listBooks().then(function (bs) {
+        var book = null;
+        for (var i = 0; i < bs.length; i++) if (String(bs[i].id) === String(opts.bookId)) { book = bs[i]; break; }
+        if (!book) return Promise.reject(new Error('目标书籍不存在（id=' + opts.bookId + '），请重新选择'));
+        return DBp.listChapters(book.id).then(function (existing) {
+          return writeChains(book.id, existing.length).then(function (n) {
+            return { bookId: book.id, mode: 'merge', appended: n, chapters: n, title: book.title };
+          });
+        });
+      });
+    }
+
+    var title = (opts.title && String(opts.title).trim()) || '导入作品';
+    return DBp.createBook({ title: title, synopsis: opts.synopsis || '' }).then(function (bookId) {
+      return writeChains(bookId, 0).then(function (n) {
+        return { bookId: bookId, mode: 'new', chapters: n, title: title };
+      });
     });
   }
 

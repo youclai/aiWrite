@@ -37,6 +37,7 @@
         matchText: body,
         characters: p.characters || [],
         template: p.template,
+        userHint: p.userHint,   // 本次操作的可选补充要求（prompt.js 限长并拼进永不裁的[指令]）
         settings: p.settings
       });
     } catch (err) {

@@ -1,0 +1,8 @@
+起点 chapter => {"hash":"#/chapter/7","openSheets":0,"fabOpen":false,"previewOpen":false,"toast":""}
+BACK#1 (期望 book/1/chapters) => {"hash":"#/book/1/chapters","openSheets":0,"fabOpen":false,"previewOpen":false,"toast":""}
+BACK#2 (期望 shelf) => {"hash":"#/shelf","openSheets":0,"fabOpen":false,"previewOpen":false,"toast":""}
+顶层单按 BACK (期望仍 shelf + 再按一次提示) => {"hash":"#/shelf","openSheets":0,"fabOpen":false,"previewOpen":false,"toast":"再按一次返回键退出应用"}
+起点 editor => {"hash":"#/editor/1/7","openSheets":0,"fabOpen":false,"previewOpen":false,"toast":"再按一次返回键退出应用"}
+BACK (期望 chapter/7) => {"hash":"#/chapter/7","openSheets":0,"fabOpen":false,"previewOpen":false,"toast":""}
+me+打开用户说明弹层 => {"hash":"#/me","openSheets":1,"fabOpen":false,"previewOpen":false,"toast":""}
+BACK (期望仍 me，弹层已关) => {"hash":"#/me","openSheets":0,"fabOpen":false,"previewOpen":false,"toast":""}

@@ -159,6 +159,21 @@
                "updated_at INTEGER NOT NULL)" },
         { sql: 'CREATE INDEX idx_sections_chapter ON sections(chapter_id, idx)' }
       ]
+    },
+    {
+      // 内置模板文案富化（修改建议 7）：不改既有语义，只把“期望输出与粒度”写清楚；
+      // 只动 is_builtin=1 的行，用户自建/改过的模板绝不覆盖。
+      version: 5,
+      name: '内置模板文案富化（明确期望输出与粒度）',
+      up: [
+        { sql: "UPDATE templates SET instruction='在保持原意、人称与人名一致的前提下润色下文，消除口语化赘词，不要添加新情节。只输出润色后的正文，不要解释、不加标题。' WHERE kind='polish' AND is_builtin=1" },
+        { sql: "UPDATE templates SET instruction='把下文扩写到约两倍长度，补充动作与心理细节，不改变既有情节走向。只输出扩写后的正文，不要附写作说明。' WHERE kind='expand' AND is_builtin=1" },
+        { sql: "UPDATE templates SET instruction='把下文压缩到约一半长度，保留关键情节与所有伏笔信息。只输出压缩后的正文。' WHERE kind='condense' AND is_builtin=1" },
+        { sql: "UPDATE templates SET instruction='只重写下文中的对白，使其符合各角色的说话风格与禁忌设定，叙述部分保持原样。只输出改写后的文本，不要添加解释。' WHERE kind='dialogue' AND is_builtin=1" },
+        { sql: "UPDATE templates SET instruction='承接下文结尾续写 300 字左右，不总结、不预告后事、不改变已确立的事实。只输出续写正文。' WHERE kind='continue' AND is_builtin=1" },
+        { sql: "UPDATE templates SET instruction='逐条检查下文中的人设崩塌、称呼不一致、时间线矛盾、视角越界与设定冲突。每条输出含 quote（原文片段）、type（类型）、problem（问题）、suggestion（建议）的 JSON 数组。' WHERE kind='consistency' AND is_builtin=1" },
+        { sql: "UPDATE templates SET instruction='用 80 字左右概括本章：分点列出主要事件、关键转折、情绪走向，只列事实，不评价。' WHERE kind='summary' AND is_builtin=1" }
+      ]
     }
   ];
 

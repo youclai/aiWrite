@@ -1,4 +1,4 @@
-app.js 路由 resolve 回归  2026-10-18T04:57:07.918Z
+app.js 路由 resolve 回归  2026-10-19T10:40:01.719Z
 
 PASS  shelf 无 params 不崩
 PASS  me 无 params 不崩
