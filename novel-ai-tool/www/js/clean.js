@@ -25,6 +25,22 @@
     ["'", "'"]
   ];
 
+  /* 固定输出契约（与 prompt.js 的 [输出格式] 对齐）：模型把结果正文包在 <正文>…</正文> 之间。
+     命中则确定性只取标记内内容（天然剔除客套话/回显的选段原文/外层解释）；未命中则回退下面的启发式清洗。 */
+  var BODY_OPEN = '<\u6b63\u6587>', BODY_CLOSE = '</\u6b63\u6587>';   // <正文> / </正文>
+  // 全局非贪婪扫描所有配对：取内容最长的一个。这样若模型先照拄了规则里的空模板
+  // <正文></正文>（或先输出一段带标签的废话）也不会误命中空块而丢真正文；无任何配对才回退启发式。
+  var BODY_RE = /<\u6b63\u6587>([\s\S]*?)<\/\u6b63\u6587>/g;   // 正则字面量：\s\S 天然生效（勿用字符串拼 new RegExp）
+  function extractDelimited(s) {
+    var re = new RegExp(BODY_RE.source, 'g');   // 重置 lastIndex，避免共享全局正则受上次 exec 影响
+    var best = null, m;
+    while ((m = re.exec(String(s == null ? '' : s))) !== null) {
+      if (best === null || m[1].length > best.length) best = m[1];
+      if (m.index === re.lastIndex) re.lastIndex++;   // 防零宽匹配死循环
+    }
+    return best;
+  }
+
   function normalize(text) {
     var s = String(text == null ? '' : text);
     s = s.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -65,13 +81,16 @@
   // 主入口：raw → 清洗后的可入稿文本
   function strip(raw) {
     var s = normalize(raw);
-    s = stripFences(s);
-    s = stripLead(s);
-    s = stripFences(s);          // 引导语后可能又露出围栏
-    s = unwrapQuotes(s);
-    s = s.replace(/^\n+|\n+$/g, '');   // 去首尾空行，保留中间
-    return s.trim();
+    // 优先走固定格式：命中 <正文>…</正文> 就只取内层（对模型偶发的越格式回显最稳）；未命中才回退启发式
+    var inner = extractDelimited(s);
+    var core = inner != null ? inner : s;
+    core = stripFences(core);
+    core = stripLead(core);
+    core = stripFences(core);          // 引导语后可能又露出围栏
+    core = unwrapQuotes(core);
+    core = core.replace(/^\n+|\n+$/g, '');   // 去首尾空行，保留中间
+    return core.trim();
   }
 
-  root.NOVEL_CLEAN = { strip: strip, _internal: { LEAD_PATTERNS: LEAD_PATTERNS } };
+  root.NOVEL_CLEAN = { strip: strip, _internal: { LEAD_PATTERNS: LEAD_PATTERNS, extractDelimited: extractDelimited, BODY_OPEN: BODY_OPEN, BODY_CLOSE: BODY_CLOSE } };
 })(globalThis);

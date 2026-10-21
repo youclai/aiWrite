@@ -30,11 +30,11 @@
   }
 
   var BUILTIN = [
-    { kind: 'polish', name: '润色', instruction: '在保持原意、人称与专有名词的前提下，让文字更凝练、更有画面感。只输出润色后的正文，不要解释、不加标题。' },
-    { kind: 'expand', name: '扩写', instruction: '在不改变剧情的前提下，扩写动作、感官与心理细节，篇幅约为原文的 1.5–2 倍。只输出扩写后的正文，不要附写作说明。' },
-    { kind: 'condense', name: '缩写', instruction: '压缩冗余表述，保留关键情节、所有伏笔信息与全部人物对话要点，篇幅约为原文的一半。只输出压缩后的正文。' },
-    { kind: 'dialogue', name: '转对话', instruction: '把叙述改写为人物对话，突出各自语气与潜台词，不要添加旁白解释。只输出改写后的对话正文。' },
-    { kind: 'continue', name: '续写', instruction: '紧接选段之后自然续写，保持文风、人称与人设一致，只输出续写正文，不总结、不预告后事。' }
+    { kind: 'polish', name: '润色', instruction: '在保持原意、人称与专有名词的前提下，让文字更凝练、更有画面感。只输出润色后的正文（将整体替换所选），不要复述原文、不解释、不加标题。' },
+    { kind: 'expand', name: '扩写', instruction: '在不改变剧情的前提下，扩写动作、感官与心理细节，篇幅约为原文的 1.5–2 倍。只输出扩写后的正文（将整体替换所选），不要附写作说明。' },
+    { kind: 'condense', name: '缩写', instruction: '压缩冗余表述，保留关键情节、所有伏笔信息与全部人物对话要点，篇幅约为原文的一半。只输出压缩后的正文（将整体替换所选）。' },
+    { kind: 'dialogue', name: '转对话', instruction: '把叙述改写为人物对话，突出各自语气与潜台词，不要添加旁白解释。只输出改写后的对话正文（将整体替换所选）。' },
+    { kind: 'continue', name: '续写', instruction: '紧接选段结尾自然续写，保持文风、人称与人设一致。只输出新续写的正文，切勿重复选段里已有的文字，不总结、不预告后事。' }
   ];
 
   function head(title, backHash) {
@@ -137,6 +137,37 @@
     });
   }
 
+  // 回收站（F-软删）：三层删除按钮 → 二次确认 → 软删除标记（不搬内容、不落 temp/）。
+  // 保留天数沿用存储设置 temp_keep_days（默认 7）；kind ∈ book/chapter/section。
+  var TRASH_KINDS = {
+    book: { label: '作品', trash: 'trashBook', restore: 'restoreBook' },
+    chapter: { label: '章节', trash: 'trashChapter', restore: 'restoreChapter' },
+    section: { label: '节', trash: 'trashSection', restore: 'restoreSection' }
+  };
+  function delToTrash(kind, id, title, after) {
+    var k = TRASH_KINDS[kind];
+    if (!k) { App().toast('未知删除类型', 'bad'); return; }
+    id = Number(id);
+    DB.getSetting('storage').catch(function () { return null; }).then(function (stg) {
+      var days = (stg && stg.temp_keep_days) || 7;
+      confirmSheet('移入回收站', '「' + (title || '未命名') + '」' + k.label + '将移入回收站，保留 ' + days + ' 天，期间可在“我的 › 存储 › 回收站”恢复。', function () {
+        Promise.resolve(DB[k.trash](id)).then(function () {
+          App().toast('已移入回收站', 'ok');
+          if (after) after();
+        }, function (e) { App().toast('删除失败：' + ((e && e.message) || e), 'bad'); });
+      });
+    });
+  }
+  // 遍历 [data-trash] 绑定删除：stopPropagation 防止触发整卡 data-open 导航
+  function wireCardTrash(scope, after) {
+    [].forEach.call((scope || screen()).querySelectorAll('[data-trash]'), function (btn) {
+      on(btn, 'click', function (e) {
+        e.stopPropagation();
+        delToTrash(btn.getAttribute('data-kind'), btn.getAttribute('data-id'), btn.getAttribute('data-title'), after);
+      });
+    });
+  }
+
   // 数据操作（导出/导入/备份/恢复/统计）的注入依赖；DA 懒取，确保脚本加载顺序无关
   function DA() { return root.NOVEL_DATA_ACTIONS; }
   function dataDeps() {
@@ -156,7 +187,8 @@
         + (books.length ? '<ul class="list">' + books.map(function (b) {
             return '<li class="card" data-open="#/book/' + b.id + '">'
               + '<div class="ct">' + esc(b.title || '未命名') + '</div>'
-              + '<div class="cs">' + esc(b.author || '') + ' · ' + esc(b.synopsis || '（暂无简介）').slice(0, 40) + '</div></li>';
+              + '<div class="cs">' + esc(b.author || '') + ' · ' + esc(b.synopsis || '（暂无简介）').slice(0, 40) + '</div>'
+              + '<div class="card-foot"><button class="btn-del" data-trash data-kind="book" data-id="' + b.id + '" data-title="' + esc(b.title || '未命名') + '">🗑 删除</button></div></li>';
           }).join('') + '</ul>' : '<p class="muted">还没有作品，点上面新建一部开始。</p>')
         + '</div>';
       screen().innerHTML = html;
@@ -169,6 +201,7 @@
       [].forEach.call(screen().querySelectorAll('[data-open]'), function (li) {
         on(li, 'click', function () { App().go(li.getAttribute('data-open')); });
       });
+      wireCardTrash(screen(), function () { App().render(); });
     });
   }
 
@@ -192,6 +225,7 @@
       }).join('');
       screen().innerHTML = head(bk.title || '作品', '#/shelf')
         + '<div class="vwrap"><nav class="vnav">' + navHtml + '</nav><div class="vpanel" id="bookBody"></div></div>';
+      screen().classList.add('screen--dual');   // 双栏左右独立滚动（§4-D）
       wireBack();
       [].forEach.call(screen().querySelectorAll('[data-tab-nav]'), function (b) {
         on(b, 'click', function () { App().go('#/book/' + bookId + '/' + b.getAttribute('data-tab-nav')); });
@@ -217,7 +251,8 @@
         ? '<ul class="list">' + chs.map(function (c) {
             return '<li class="card" data-open="#/chapter/' + c.id + '">'
               + '<div class="ct">' + (c.idx) + '. ' + esc(c.title || '（无题）') + '</div>'
-              + '<div class="cs">' + (c.word_count || 0) + ' 字' + (c.summary ? ' · 有摘要' : '') + ' · 点击进入</div></li>';
+              + '<div class="cs">' + (c.word_count || 0) + ' 字' + (c.summary ? ' · 有摘要' : '') + ' · 点击进入</div>'
+              + '<div class="card-foot"><button class="btn-del" data-trash data-kind="chapter" data-id="' + c.id + '" data-title="' + esc(c.title || '（无题）') + '">🗑 删除</button></div></li>';
           }).join('') + '</ul>'
         : '<div class="empty-hero"><div class="eh-ic">📖</div><div class="eh-t">还没有章节</div>'
           + '<div class="eh-d">一本书从第一章开始。章节下可继续拆分“节”，也可直接写作本章正文。</div>'
@@ -226,6 +261,7 @@
       [].forEach.call(body.querySelectorAll('[data-open]'), function (li) {
         on(li, 'click', function () { App().go(li.getAttribute('data-open')); });
       });
+      wireCardTrash(body, function () { App().render(); });
       on(q('#newCh'), 'click', function () {
         DB.createChapter(bookId, '第' + (chs.length + 1) + '章').then(function (id) { App().go('#/chapter/' + id); },
           function (e) { App().toast('创建章节失败：' + ((e && e.message) || e), 'bad'); });
@@ -251,7 +287,8 @@
               ? '<ul class="list">' + secs.map(function (s) {
                   return '<li class="card" data-open="#/section/' + chapterId + '/' + s.id + '">'
                     + '<div class="ct">' + s.idx + '. ' + esc(s.title || '（无题）') + '</div>'
-                    + '<div class="cs">' + (s.word_count || 0) + ' 字' + (s.summary ? ' · 有摘要' : '') + '</div></li>';
+                    + '<div class="cs">' + (s.word_count || 0) + ' 字' + (s.summary ? ' · 有摘要' : '') + '</div>'
+                    + '<div class="card-foot"><button class="btn-del" data-trash data-kind="section" data-id="' + s.id + '" data-title="' + esc(s.title || '（无题）') + '">🗑 删除</button></div></li>';
                 }).join('') + '</ul>'
               : '<div class="empty-hero"><div class="eh-ic">📑</div><div class="eh-t">这一章还没有节</div>'
                 + '<div class="eh-d">把长章拆成若干小节更好推进；也可点上方“直接写本章正文”不分节。</div>'
@@ -261,6 +298,7 @@
         [].forEach.call(screen().querySelectorAll('[data-open]'), function (li) {
           on(li, 'click', function () { App().go(li.getAttribute('data-open')); });
         });
+        wireCardTrash(screen(), function () { App().render(); });
         on(q('#newSec'), 'click', function () {
           DB.createSection(chapterId, '第' + (secs.length + 1) + '节').then(function (id) {
             App().go('#/section/' + chapterId + '/' + id);
@@ -553,16 +591,20 @@
         }
 
         // ---- 选区（F11 越界兜底：以当前 textarea 值为准钳制）----
+        //   与“定位”完全等效：先剥离任何 ⟦⟧ 标记取干净正文（stripMarkers），原生光标坐标经 mapToClean
+        //   映射到干净坐标；保证即便正文残留（不成对）标记也不会把标记符发给 AI、坐标也不会错位。
         function currentSel() {
-          var v = ta.value;
-          var s = ta.selectionStart, e = ta.selectionEnd;
-          if (s === e) {   // 未选：扩到光标所在段落
-            var a = v.lastIndexOf('\n', s - 1) + 1;
-            var b = v.indexOf('\n', e); b = b < 0 ? v.length : b;
+          var raw = ta.value;
+          var clean = U.stripMarkers(raw);
+          var mc = U.mapToClean(raw, ta.selectionStart, ta.selectionEnd);
+          var s = mc.start, e = mc.end;
+          if (s === e) {   // 未选：扩到光标所在段落（基于干净正文）
+            var a = clean.lastIndexOf('\n', s - 1) + 1;
+            var b = clean.indexOf('\n', e); b = b < 0 ? clean.length : b;
             if (a === b) { a = s; b = e; }
-            return root.NOVEL_UTIL.clampRange(a, b, v.length);
+            return U.clampRange(a, b, clean.length);
           }
-          return root.NOVEL_UTIL.clampRange(s, e, v.length);
+          return U.clampRange(s, e, clean.length);
         }
 
         // ---- 运行一个动作（userHint：本次操作的临时补充要求，可选；拼进 [指令] 且随选段/指令永不裁）----
@@ -577,7 +619,7 @@
           var marked = U.extractMarked(raw);
           var v, sel;
           if (marked) { v = marked.base; sel = { start: marked.start, end: marked.end, valid: marked.end > marked.start }; }
-          else { v = raw; sel = currentSel(); }
+          else { v = U.stripMarkers(raw); sel = currentSel(); }   // 去标记后与定位分支同基（v 与 currentSel 内部 clean 同源）
           var exempt = tpl.kind === 'continue' || tpl.kind === 'consistency' || tpl.kind === 'query';
           if (!sel.valid && !exempt) { App().toast('请先点『定位』或『选中全文』标出要处理的文字', 'warn'); return; }
           commit(); // 先把手改落盘（草稿，不快照；save 前已 stripMarkers）
@@ -665,7 +707,8 @@
               // 以“当前”去标记正文重算选区（sel 为 base 坐标），避免生成期间用户又改了正文；标记不入库
               var cur = U.stripMarkers(ta.value);
               var c = root.NOVEL_UTIL.clampRange(sel.start, sel.end, cur.length);
-              var ap = root.NOVEL_ADOPT.applyResult(mode, cur, c.start, c.end, res.cleaned);
+              // 把选区原文一并交给采纳器：replace 时可剥掉模型偶发回显的重复原文，真正做到“覆盖”而非“新增一行”
+              var ap = root.NOVEL_ADOPT.applyResult(mode, cur, c.start, c.end, res.cleaned, { selection: cur.slice(c.start, c.end) });
               if (ap.changed) {
                 ta.value = ap.newBody;
                 ta.selectionStart = ta.selectionEnd = ap.caret;
@@ -963,6 +1006,7 @@
     screen().innerHTML = head('我的', '')
       + '<div class="vwrap"><nav class="vnav">' + navHtml + '</nav><div class="vpanel" id="meBody"></div></div>'
       + '<div class="me-foot"><button id="userDocBtn">用户说明 · 隐私与免责</button></div>';
+    screen().classList.add('screen--dual');   // 双栏左右独立滚动（§4-D）
     wireBack();
     on(q('#userDocBtn'), 'click', openUserDoc);
     [].forEach.call(screen().querySelectorAll('[data-me-nav]'), function (b) {
@@ -1075,10 +1119,12 @@
         + '<div class="row"><button class="primary" id="saveSt">保存</button><button id="clearTemp">清理临时缓存</button></div>'
         + '<h2 class="sec">存储统计</h2><div class="row"><button id="statBtn">统计一次</button></div>'
         + '<pre class="probe" id="statOut" hidden></pre>'
+        + '<h2 class="sec">回收站</h2><div id="trashBox">加载中…</div>'
         + '</div>';
+      renderTrash(q('#trashBox'));
       on(q('#saveSt'), 'click', function () {
         var next = Object.assign({}, stg, { temp_auto_clean: q('#stAuto').checked, temp_keep_days: parseInt(q('#stKeep').value, 10) || 7 });
-        DB.setSetting('storage', next).then(function () { App().toast('已保存存储设置', 'ok'); },
+        DB.setSetting('storage', next).then(function () { App().toast('已保存存储设置', 'ok'); renderTrash(q('#trashBox')); },
           function (e) { App().toast('保存失败：' + ((e && e.message) || e), 'bad'); });
       });
       on(q('#clearTemp'), 'click', function () {
@@ -1097,6 +1143,58 @@
             + (s.temp ? '\ntemp 占用：' + s.temp.total.files + ' 文件 / ' + Math.round(s.temp.total.bytes / 1024) + ' KB' : '\ntemp：未就绪')
             + '\n各表行数：' + Object.keys(t).map(function (k) { return k + '=' + t[k]; }).join('  ');
         }, function (e) { out.hidden = false; out.textContent = '统计失败：' + (e.message || e); });
+      });
+    });
+  }
+
+  // 回收站分区：列表 + 逐条恢复/彻底删除 + 清空（均走页内 confirmSheet，禁原生弹窗）
+  function renderTrash(container) {
+    if (!container) return;
+    DB.getSetting('storage').catch(function () { return null; }).then(function (stg) {
+      var days = (stg && stg.temp_keep_days) || 7;
+      return DB.listTrash().then(function (tr) {
+        var DAY = 86400000, nowMs = Date.now();
+        var rows = [];
+        tr.books.forEach(function (b) { rows.push({ kind: 'book', id: b.id, label: '作品', title: b.title, at: b.deleted_at }); });
+        tr.chapters.forEach(function (c) { rows.push({ kind: 'chapter', id: c.id, label: '章节', title: c.title, at: c.deleted_at, extra: (c.word_count || 0) + ' 字' }); });
+        tr.sections.forEach(function (s) { rows.push({ kind: 'section', id: s.id, label: '节', title: s.title, at: s.deleted_at }); });
+        rows.sort(function (a, b) { return b.at - a.at; });
+        if (!rows.length) { container.innerHTML = '<p class="muted">回收站是空的。删除的作品/章节/节会先移到这里，保留 ' + days + ' 天可恢复。</p>'; return; }
+        container.innerHTML = '<div class="hint">以下条目在回收站保留 ' + days + ' 天，到期后若已开启“自动清理过期暂存”会于下次启动/回前台自动彻底清除。</div>'
+          + '<ul class="list">' + rows.map(function (r) {
+              var remain = Math.max(0, Math.ceil((r.at + days * DAY - nowMs) / DAY));
+              return '<li class="card trash-item">'
+                + '<div class="ct">[' + r.label + '] ' + esc(r.title || '未命名') + '</div>'
+                + '<div class="cs">' + (r.extra ? r.extra + ' · ' : '') + '约 ' + remain + ' 天后到点清除</div>'
+                + '<div class="card-foot row">'
+                + '<button class="primary" data-restore data-kind="' + r.kind + '" data-id="' + r.id + '">恢复</button>'
+                + '<button class="btn-del" data-purge data-kind="' + r.kind + '" data-id="' + r.id + '" data-title="' + esc(r.title || '未命名') + '">彻底删除</button>'
+                + '</div></li>';
+            }).join('') + '</ul>'
+          + '<div class="row"><button id="emptyTrashBtn" class="btn-del">清空回收站</button></div>';
+        [].forEach.call(container.querySelectorAll('[data-restore]'), function (btn) {
+          on(btn, 'click', function () {
+            var k = TRASH_KINDS[btn.getAttribute('data-kind')];
+            Promise.resolve(DB[k.restore](Number(btn.getAttribute('data-id')))).then(function () {
+              App().toast('已恢复', 'ok'); renderTrash(container);
+            }, function (e) { App().toast('恢复失败：' + ((e && e.message) || e), 'bad'); });
+          });
+        });
+        [].forEach.call(container.querySelectorAll('[data-purge]'), function (btn) {
+          on(btn, 'click', function () {
+            var kind = btn.getAttribute('data-kind'), id = Number(btn.getAttribute('data-id'));
+            confirmSheet('彻底删除', '「' + (btn.getAttribute('data-title') || '未命名') + '」将被永久清除，不可恢复。确定？', function () {
+              Promise.resolve(DB.purgeOne(kind, id)).then(function () { App().toast('已彻底删除', 'ok'); renderTrash(container); },
+                function (e) { App().toast('删除失败：' + ((e && e.message) || e), 'bad'); });
+            });
+          });
+        });
+        on(container.querySelector('#emptyTrashBtn'), 'click', function () {
+          confirmSheet('清空回收站', '将永久清除回收站内全部 ' + rows.length + ' 条内容，不可恢复。确定？', function () {
+            Promise.resolve(DB.emptyTrash()).then(function () { App().toast('已清空回收站', 'ok'); renderTrash(container); },
+              function (e) { App().toast('清空失败：' + ((e && e.message) || e), 'bad'); });
+          });
+        });
       });
     });
   }
@@ -1168,39 +1266,78 @@
     });
   }
 
-  /* ================= 导入书籍（建议 5 独立成页 + 建议 6 可并入指定书） =================
-     两种模式：新建书籍（建书→逐章落正文）/ 并入现有（不建书，按识别标题顺序向书末追加，
-     不跑去重/覆盖；重名仅提示）。落库前先“预检”：展示识别章数与标题示例，二次确认后执行。 */
+  /* ================= 导入书籍（规划书 v2：三种录入格式 + txt 文件导入） =================
+     录入格式：章节分开 split（默认，建/并入书，章>节两层）/ 单章 chapterOnly（只切章，
+     节行降级并入章正文）/ 单节 sectionOnly（只切节，并入指定的一章）。文本来源：粘贴框或
+     txt 文件（UTF-8 优先，乱码回退 GB18030）。落库前预检二次确认；并入只追加，绝不改既有内容。 */
   function renderMeImport(body) {
     DB.listBooks().then(function (books) {
       var canMerge = books.length > 0;
       var curBookId = App().state.bookId ? String(App().state.bookId) : '';
       body.innerHTML = '<div class="sec-head"><span class="st">导入书籍</span></div><div class="form">'
-        + '<div class="fld"><label>导入到</label><div class="radiogroup">'
+        + '<div class="fld" id="fldMode"><label>导入到</label><div class="radiogroup">'
         + '<label class="radio"><input type="radio" name="impMode" value="new" checked> 新建书籍</label>'
         + '<label class="radio"><input type="radio" name="impMode" value="merge"' + (canMerge ? '' : ' disabled') + '> 并入现有书籍</label>'
-        + '</div>' + (canMerge ? '' : '<div class="hint">还没有任何书籍，“并入现有书籍”需先新建一本。</div>') + '</div>'
+        + '</div>' + (canMerge ? '' : '<div class="hint">还没有任何书籍，“并入”需先新建一本。</div>') + '</div>'
+        + '<div class="fld"><label>录入格式</label><div class="radiogroup">'
+        + '<label class="radio"><input type="radio" name="impFmt" value="split" checked> 章节分开录入</label>'
+        + '<label class="radio"><input type="radio" name="impFmt" value="chapterOnly"> 单章录入</label>'
+        + '<label class="radio"><input type="radio" name="impFmt" value="sectionOnly"> 单节录入</label>'
+        + '</div><div class="hint" id="fmtHint"></div></div>'
         + '<div class="fld" id="fldTitle"><label>书名</label><input id="impTitle" placeholder="导入的作品标题"></div>'
         + '<div class="fld" id="fldBook" hidden><label>目标书籍</label><select id="impBook">'
         + books.map(function (b) {
             return '<option value="' + b.id + '"' + (String(b.id) === curBookId ? ' selected' : '') + '>' + esc(b.title || '未命名') + '</option>';
           }).join('') + '</select><div class="hint" id="bookStat"></div></div>'
-        + '<div class="fld"><label>正文（自动按“第X章”分章；无章标题则按空行分块）</label><textarea id="impBody" rows="6" placeholder="粘贴已有小说正文…"></textarea></div>'
-        + '<div class="row"><button class="primary" id="preCheckBtn">预检（识别章数）</button><button id="doImport" disabled>确认导入</button></div>'
-        + '<div class="note">预检只识别不写库；确认后才落库。并入模式只在书末追加新章节，绝不改动既有章节；重名标题仅提示，不自动合并。</div>'
+        + '<div class="fld" id="fldChapter" hidden><label>目标章节</label><select id="impChapter"></select><div class="hint" id="chStat"></div></div>'
+        + '<div class="fld"><label id="impBodyLab">正文</label><textarea id="impBody" rows="6"></textarea></div>'
+        + '<div class="fld"><label>或从 txt 文件读取（读入后可在上方预览/编辑）</label>'
+        + '<input type="file" id="impFile" accept=".txt,text/plain"><div class="hint" id="encHint"></div></div>'
+        + '<div class="row"><button class="primary" id="preCheckBtn">预检（识别结构）</button><button id="doImport" disabled>确认导入</button></div>'
+        + '<div class="note" id="impNote">预检只识别不写库；确认后才落库。并入模式只追加，绝不改动既有内容；重名标题仅提示，不自动合并。</div>'
         + '</div>';
 
-      // 模式切换：新建→书名输入；并入→目标书下拉（禁用/隐藏书名）
+      // 字段联动：sectionOnly 固定为“并入指定章”（隐藏模式/书名选择）；split/chapterOnly 随模式切换
       function mode() { var r = body.querySelector('input[name="impMode"]:checked'); return r ? r.value : 'new'; }
+      function format() { var r = body.querySelector('input[name="impFmt"]:checked'); return r ? r.value : 'split'; }
       function toggleFields() {
-        var merge = mode() === 'merge';
+        var sec = format() === 'sectionOnly';
+        var merge = sec || mode() === 'merge';
+        q('#fldMode').hidden = sec;
         q('#fldTitle').hidden = merge;
         q('#fldBook').hidden = !merge;
+        q('#fldChapter').hidden = !sec;
+        var fmt = format();
+        q('#impBodyLab').textContent = fmt === 'split'
+          ? '正文（识别“第X章 / 第X节”两层结构，节挂到所属章下）'
+          : fmt === 'chapterOnly'
+            ? '正文（只按“第X章”分章；“第X节”等行原样并入所在章正文，不丢字）'
+            : '正文（只按“第X节”切节，全部追加到下方所选章节之下）';
+        q('#impBody').setAttribute('placeholder', fmt === 'sectionOnly'
+          ? '\u3000第1节 小节标题\n\u3000\u3000正文…\n\u3000第2节 小节标题\n\u3000\u3000正文…'
+          : '封面\n名称：书名\n作者：xxx\n\u3000第1章 标题\n\u3000\u3000正文…\n\u3000第1节 小节标题\n\u3000\u3000正文…');
+        q('#fmtHint').textContent = fmt === 'split'
+          ? '封面/文体/类别/风格/时间/长度/阅读显示等本软件没有的信息将被忽略（预检可见行数）；节会挂到所属章下。'
+          : fmt === 'chapterOnly'
+            ? '只识别章标题；没有章标题则整篇作为一章导入。'
+            : '单节录入：不建书不建章，识别“第X节”切节并追加进所选章；章标题行会并入节正文。';
         showBookStat();
+        if (sec) loadChapters();
+      }
+      // sectionOnly 两级下拉：目标书变化时刷新章清单
+      function loadChapters() {
+        var bid = q('#impBook').value;
+        if (!bid) { q('#impChapter').innerHTML = ''; q('#chStat').textContent = ''; return; }
+        DB.listChapters(bid).then(function (chs) {
+          q('#impChapter').innerHTML = chs.map(function (c) {
+            return '<option value="' + c.id + '">' + esc(c.idx + '. ' + (c.title || '未命名')) + '</option>';
+          }).join('');
+          q('#chStat').textContent = '将追加到《' + (findOptionText(bid) || '') + '》所选章之下；所选章正文与既有节一字不碰。';
+        });
       }
       // 目标书统计：“书名（N 章 · M 字）”口径展示在下方提示
       function showBookStat() {
-        if (mode() !== 'merge') { q('#bookStat').textContent = ''; return; }
+        if (format() === 'sectionOnly' || mode() !== 'merge') { q('#bookStat').textContent = ''; return; }
         var bid = q('#impBook').value;
         DB.listChapters(bid).then(function (chs) {
           var words = chs.reduce(function (a, c) { return a + (c.word_count || 0); }, 0);
@@ -1208,48 +1345,144 @@
         });
       }
       [].forEach.call(body.querySelectorAll('input[name="impMode"]'), function (r) { on(r, 'change', toggleFields); });
-      on(q('#impBook'), 'change', showBookStat);
+      [].forEach.call(body.querySelectorAll('input[name="impFmt"]'), function (r) { on(r, 'change', function () { pending = null; q('#doImport').disabled = true; toggleFields(); }); });
+      on(q('#impBook'), 'change', function () { showBookStat(); if (format() === 'sectionOnly') loadChapters(); });
+      // txt 文件选取：按字节读 → SI.decodeTxt（UTF-8 优先，替换符过多回退 GB18030）→ 填进粘贴框预览
+      on(q('#impFile'), 'change', function () {
+        var f = q('#impFile').files && q('#impFile').files[0];
+        if (!f) return;
+        var fr = new FileReader();
+        fr.onload = function () {
+          try {
+            var SI = root.NOVEL_STRUCTURED_IMPORT;
+            var dec = (SI && SI.decodeTxt) ? SI.decodeTxt(new Uint8Array(fr.result)) : { text: '', encoding: '?' };
+            q('#impBody').value = dec.text;
+            q('#encHint').textContent = '已读取 ' + f.name + ' · 检测编码：' + dec.encoding + ' · ' + dec.text.length + ' 字，可在上方预览/编辑后预检。';
+            pending = null; q('#doImport').disabled = true;
+          } catch (e) { App().toast('读取文件失败：' + (e.message || e), 'bad'); }
+        };
+        fr.onerror = function () { App().toast('读取文件失败', 'bad'); };
+        fr.readAsArrayBuffer(f);
+      });
       toggleFields();
 
-      // 预检：纯本地分章（与 dataActions 同一套 NOVEL_IMPORTER 规则），展示章数+标题示例后二次确认；
-      // 并入模式额外比对现有章标题，重名只提示不自动合并（保守策略，避免误改既有章）
-      var pending = null;   // { parts, mode, bookId, title, text }
+      // 预检：纯本地解析，三格式各走各的降维（split 树 / chapterOnly 扁平章 / sectionOnly 追加节），
+      // 展示结构后二次确认；并入/追加模式额外比对现有章标题，重名只提示不自动合并（保守）。
+      var pending = null;   // { format, mode, bookId, chapterId, title, text }
       on(q('#preCheckBtn'), 'click', function () {
         var text = String(q('#impBody').value || '');
-        if (!text.trim()) { App().toast('请先粘贴要导入的正文', 'warn'); return; }
-        var IMP = root.NOVEL_IMPORTER;
-        var parts = IMP.looksChaptered(text) ? IMP.split(text) : IMP.blankSplit(text);
-        if (!parts.length) parts = [{ title: '', body: text.trim() }];
-        var m = mode();
-        var title = (q('#impTitle').value || '').trim() || '导入作品';
+        if (!text.trim()) { App().toast('请先粘贴或选择要导入的正文', 'warn'); return; }
+        var SI = root.NOVEL_STRUCTURED_IMPORT;
+        if (!SI) { App().toast('外部导入解析器未加载', 'bad'); return; }
+        var fmt = format(), m = mode();
+        var title = (q('#impTitle').value || '').trim();
         var bookId = m === 'merge' ? q('#impBook').value : '';
-        if (m === 'merge') {
-          DB.listChapters(bookId).then(function (chs) {
-            var exist = {};
-            chs.forEach(function (c) { if (c.title) exist[String(c.title).trim()] = true; });
-            var dups = [];
-            parts.forEach(function (p) { if (p.title && exist[p.title.trim()]) dups.push(p.title.trim()); });
-            showPreCheck(parts, m, bookId, title, text, dups);
-          });
-        } else {
-          showPreCheck(parts, m, bookId, title, text, []);
+        if (fmt === 'sectionOnly') {   // 单节：并入指定章，不建书不建章
+          var chapId = q('#impChapter').value;
+          if (!bookId || !chapId) { App().toast('单节录入请先选择目标书籍与章节', 'warn'); return; }
+          var sp = SI.parseSections(text);
+          if (!sp.sections.length) { App().toast('未识别到任何“第X节”标题，无法按单节录入', 'warn'); return; }
+          showPreCheckSections(sp, bookId, chapId, text);
+          return;
         }
+        if (fmt === 'chapterOnly') {   // 单章：只切章，节行降级并入正文
+          var cp = SI.parseChapters(text);
+          if (m === 'new' && !title && cp.bookMeta.title) { title = cp.bookMeta.title; q('#impTitle').value = title; }
+          mergeAware(m, bookId, cp, function (dups) { showPreCheckChapters(cp, m, bookId, title || '导入作品', text, dups); });
+          return;
+        }
+        // split（章节分开录入，默认）：章 > 节 两层树
+        var parsed = SI.parse(text);
+        if (!parsed.chapters.length) { App().toast('未识别到任何“第X章/第X节”标题，请改用其它录入格式', 'warn'); return; }
+        if (m === 'new' && !title && parsed.bookMeta.title) { title = parsed.bookMeta.title; q('#impTitle').value = title; }  // 回填可改，改后即界面优先
+        mergeAware(m, bookId, parsed, function (dups) { showPreCheckTree(parsed, m, bookId, title || '导入作品', text, dups); });
       });
-      function showPreCheck(parts, m, bookId, title, text, dups) {
+      // 并入模式：先取现有章标题算重名再回调；新建直接回调。bundle 为 parts 数组或 parsed 树（取 chapters）
+      function mergeAware(m, bookId, bundle, cb) {
+        if (m !== 'merge') { cb([]); return; }
+        var chList = Array.isArray(bundle) ? bundle : (bundle.chapters || []);
+        DB.listChapters(bookId).then(function (chs) {
+          var exist = {};
+          chs.forEach(function (c) { if (c.title) exist[String(c.title).trim()] = true; });
+          var dups = [];
+          chList.forEach(function (c) { if (c.title && exist[String(c.title).trim()]) dups.push(String(c.title).trim()); });
+          cb(dups);
+        });
+      }
+      function dupNote(dups) {
+        return dups.length
+          ? '<div class="note">⚠ 有 ' + dups.length + ' 个标题与现有章节重名（' + esc(dups.slice(0, 3).join('、')) + (dups.length > 3 ? '…' : '') + '），将按新章追加，不自动合并。</div>' : '';
+      }
+
+      // structured 树形预检（§M-C-3）
+      function showPreCheckTree(parsed, m, bookId, title, text, dups) {
+        var st = parsed.report.stats, CN = root.NOVEL_STRUCTURED_IMPORT.countNonSpace;
         var actDesc = m === 'merge'
-          ? '将向《' + esc((findOptionText(bookId) || '')) + '》追加 ' + parts.length + ' 章，原有章节不改动。'
-          : '《' + esc(title) + '》将新建 ' + parts.length + ' 章。';
-        var dupNote = dups.length
-          ? '<div class="note">⚠ 有 ' + dups.length + ' 个标题与现有章节重名（' + esc(dups.slice(0, 3).join('、')) + (dups.length > 3 ? '…' : '')
-            + '），将按新章追加，不自动合并。</div>' : '';
-        var pre = parts.slice(0, 5).map(function (p, i) { return (i + 1) + '. ' + esc(p.title || '（无题，按块）'); }).join('<br>');
-        if (parts.length > 5) pre += '<br>… 共 ' + parts.length + ' 章';
-        var panel = openSheet('importConfirm', '<div class="sh-title">导入预检</div>'
-          + '<div class="note">识别到 <b>' + parts.length + '</b> 章。' + actDesc + '</div>'
-          + '<div class="probe">' + pre + '</div>' + dupNote
+          ? '将向《' + esc(findOptionText(bookId) || '') + '》追加 ' + st.chapters + ' 章（含 ' + st.sections + ' 节），原有章节不改动。'
+          : '《' + esc(title) + '》将新建 ' + st.chapters + ' 章 · ' + st.sections + ' 节。';
+        var lines = parsed.chapters.map(function (c, i) {
+          var cw = CN(c.body), empty = !c.body && !c.sections.length;
+          var t = (i + 1) + '. ' + esc(c.title || '（无题）')
+            + (c.sections.length ? '（' + c.sections.length + ' 节 · ' + cw + ' 字）' : '（' + cw + ' 字）')
+            + (empty ? ' <span class="tag">空章</span>' : '');
+          var subs = c.sections.map(function (s, j) {
+            return '　　' + (i + 1) + '.' + (j + 1) + ' ' + esc(s.title || '（无题）') + ' · ' + CN(s.body) + ' 字';
+          }).join('<br>');
+          return t + (subs ? '<br>' + subs : '');
+        }).join('<br>');
+        var dropLine = parsed.report.dropped.metaLines ? '<div class="hint">已忽略 ' + parsed.report.dropped.metaLines + ' 行封面信息（本软件无此项）。</div>' : '';
+        var anom = parsed.report.anomalies.length
+          ? '<div class="note">⚠ ' + parsed.report.anomalies.map(esc).join('<br>⚠ ') + '</div>' : '';
+        var panel = openSheet('importConfirm', '<div class="sh-title">导入预检 · 外部结构</div>'
+          + '<div class="note">识别到 <b>' + st.chapters + '</b> 章 · <b>' + st.sections + '</b> 节 · 共 ' + st.words + ' 字。' + actDesc + '</div>'
+          + '<div class="probe">' + lines + '</div>' + dropLine + anom + dupNote(dups)
+          + '<div class="hint">节正文暂不参与全文检索（检索仅覆盖章标题/正文）。</div>'
           + '<div class="row"><button class="primary" data-icok>确认导入</button><button class="ghost" data-closesheet>取消</button></div>');
-        pending = { parts: parts, mode: m, bookId: bookId, title: title, text: text };
-        q('#doImport').disabled = false;   // 预检通过后允许确认/重试同一结果
+        pending = { format: 'split', mode: m, bookId: bookId, title: title, text: text };
+        q('#doImport').disabled = false;
+        on(panel.querySelector('[data-icok]'), 'click', function () { closeSheet('importConfirm'); doImport(pending); });
+      }
+      // chapterOnly 扁平章预检（单章录入：不建节，节行已并入章正文）
+      function showPreCheckChapters(parsed, m, bookId, title, text, dups) {
+        var st = parsed.report.stats, CN = root.NOVEL_STRUCTURED_IMPORT.countNonSpace;
+        var actDesc = m === 'merge'
+          ? '将向《' + esc(findOptionText(bookId) || '') + '》追加 ' + st.chapters + ' 章，原有章节不改动。'
+          : '《' + esc(title) + '》将新建 ' + st.chapters + ' 章。';
+        var lines = parsed.chapters.map(function (c, i) {
+          var cw = CN(c.body), empty = !c.body;
+          return (i + 1) + '. ' + esc(c.title || '（无题）') + '（' + cw + ' 字）' + (empty ? ' <span class="tag">空章</span>' : '');
+        }).join('<br>');
+        var dropLine = parsed.report.dropped.metaLines ? '<div class="hint">已忽略 ' + parsed.report.dropped.metaLines + ' 行封面信息（本软件无此项）。</div>' : '';
+        var anom = parsed.report.anomalies.length
+          ? '<div class="note">⚠ ' + parsed.report.anomalies.map(esc).join('<br>⚠ ') + '</div>' : '';
+        var panel = openSheet('importConfirm', '<div class="sh-title">导入预检 · 单章录入</div>'
+          + '<div class="note">识别到 <b>' + st.chapters + '</b> 章 · 共 ' + st.words + ' 字。' + actDesc + '</div>'
+          + '<div class="probe">' + lines + '</div>' + dropLine + anom + dupNote(dups)
+          + '<div class="hint">单章录入不建节；“第X节”等标题行已原样并入所在章正文，不丢字。</div>'
+          + '<div class="row"><button class="primary" data-icok>确认导入</button><button class="ghost" data-closesheet>取消</button></div>');
+        pending = { format: 'chapterOnly', mode: m, bookId: bookId, title: title, text: text };
+        q('#doImport').disabled = false;
+        on(panel.querySelector('[data-icok]'), 'click', function () { closeSheet('importConfirm'); doImport(pending); });
+      }
+
+      // sectionOnly 追加节预检（单节录入：向所选章尾部追加，章正文与既有节一字不碰）
+      function showPreCheckSections(sp, bookId, chapId, text) {
+        var st = sp.report.stats, CN = root.NOVEL_STRUCTURED_IMPORT.countNonSpace;
+        var bookName = findOptionText(bookId) || '';
+        var chSel = q('#impChapter');
+        var chName = chSel && chSel.selectedIndex >= 0 && chSel.options[chSel.selectedIndex] ? chSel.options[chSel.selectedIndex].text : '';
+        var lines = sp.sections.map(function (s, j) {
+          return (j + 1) + '. ' + esc(s.title || '（无题）') + ' · ' + CN(s.body) + ' 字' + (!s.body ? ' <span class="tag">空节</span>' : '');
+        }).join('<br>');
+        var anom = sp.report.anomalies.length
+          ? '<div class="note">⚠ ' + sp.report.anomalies.map(esc).join('<br>⚠ ') + '</div>' : '';
+        var panel = openSheet('importConfirm', '<div class="sh-title">导入预检 · 单节录入</div>'
+          + '<div class="note">将向《' + esc(bookName) + '》' + esc(chName) + ' 追加 <b>' + st.sections + '</b> 节 · 共 ' + st.words + ' 字；该章正文与既有节一字不碰。</div>'
+          + '<div class="probe">' + lines + '</div>' + anom
+          + '<div class="hint">节正文暂不参与全文检索（检索仅覆盖章标题/正文）。</div>'
+          + '<div class="row"><button class="primary" data-icok>确认导入</button><button class="ghost" data-closesheet>取消</button></div>');
+        pending = { format: 'sectionOnly', mode: 'merge', bookId: bookId, chapterId: chapId, title: '', text: text };
+        q('#doImport').disabled = false;
         on(panel.querySelector('[data-icok]'), 'click', function () { closeSheet('importConfirm'); doImport(pending); });
       }
       function findOptionText(bid) {
@@ -1258,22 +1491,29 @@
         return '';
       }
 
-      // 执行导入：逐章链式写入；中途失败给“已成功 k/n 章 + 原因”，保持预检结果可直接重试（幂等续跑暂以整体重来为主）
+      // 执行导入：透传 format 与 chapterId；split/chapterOnly 报“N 章 · M 节”，sectionOnly 报“追加 M 节”
       function doImport(pk) {
         App().toast('导入中…');
-        DA().importBook(dataDeps(), { mode: pk.mode, bookId: pk.bookId, title: pk.title, text: pk.text }).then(function (r) {
+        DA().importBook(dataDeps(), { mode: pk.mode, bookId: pk.bookId, chapterId: pk.chapterId, title: pk.title, text: pk.text, format: pk.format }).then(function (r) {
           pending = null;
           q('#doImport').disabled = true;
-          App().toast((r.mode === 'merge' ? '已向原书追加 ' : '已导入并建新书，共 ') + r.chapters + ' 章', 'ok');
+          if (pk.format === 'sectionOnly') {
+            App().toast('已追加 ' + r.sections + ' 节到所选章', 'ok');
+            App().go('#/book/' + r.bookId + '/chapters');
+            return;
+          }
+          var sec = r.sections ? ' · ' + r.sections + ' 节' : '';
+          App().toast((r.mode === 'merge' ? '已追加 ' : '已导入并建新书，共 ') + r.chapters + ' 章' + sec, 'ok');
           App().go('#/book/' + r.bookId + '/chapters');
         }, function (e) {
-          var part = (e && e.imported != null) ? '（已成功 ' + e.imported + '/' + e.total + ' 章，可修正后重试）' : '';
+          var unit = pk.format === 'sectionOnly' ? '节' : '章';
+          var part = (e && e.imported != null) ? '（已成功 ' + e.imported + '/' + e.total + ' ' + unit + '，可修正后重试）' : '';
           App().toast('导入失败：' + ((e && e.message) || e) + part, 'bad');
         });
       }
       // 确认后按钮才允许直接重放同一预检结果（防误导入：未预检不可落库）
       on(q('#doImport'), 'click', function () {
-        if (!pending) { App().toast('请先点“预检”确认章数', 'warn'); return; }
+        if (!pending) { App().toast('请先点“预检”确认结构', 'warn'); return; }
         doImport(pending);
       });
       on(q('#impBody'), 'input', function () { pending = null; q('#doImport').disabled = true; });

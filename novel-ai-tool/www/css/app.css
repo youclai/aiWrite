@@ -89,6 +89,13 @@ button:active { transform: translateY(1px); }
 .card { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: #fffdf8; cursor: pointer; }
 .card .ct { font-weight: 600; }
 .card .cs { color: var(--muted); font-size: .82em; margin-top: 2px; }
+/* 回收站：卡片底部操作行左对齐 + 分隔线；标题/副文本不吃点击，保证整卡仍可点入；删除钮危险色且热区≥44px */
+.card .ct, .card .cs { pointer-events: none; }
+.card-foot { display: flex; justify-content: flex-start; align-items: center; gap: 10px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+.card-foot .btn-del { margin-left: 0; }
+.trash-item { cursor: default; }
+.btn-del { color: #a33; border-color: #e6c8c8; background: #fbf0f0; min-width: 44px; min-height: 44px; }
+.btn-del:active { background: #f0d9d9; }
 
 /* ---- 编辑器（全屏：除顶部标题栏与底部导航栏外占满） ---- */
 .editor { display: flex; flex-direction: column; height: calc(100vh - 48px - 56px - env(safe-area-inset-bottom)); padding: 0; }
@@ -174,6 +181,17 @@ button:active { transform: translateY(1px); }
 .vnav .vbtn.active::before { content: ''; position: absolute; left: -6px; top: 12px; bottom: 12px; width: 3px; background: var(--accent); border-radius: 2px; opacity: .55; }
 .vpanel { flex: 1; min-width: 0; }
 .vpanel > .sec:first-child { margin-top: 0; }
+
+/* ---- 双栏左右独立滚动（规划书 v2 §4-D）：仅“作品内分段 / 我的”两栏屏加 .screen--dual。
+   把整屏变为定高 flex 列（填满可视高、外层不再随页滚动）：顶栏与底栏固定，
+   .vwrap 占中间并 overflow:hidden，左 .vnav / 右 .vpanel 各自 overflow-y:auto 形为独立滚动区，
+   右栏滚动不再推动左栏。普通屏（阅读器/编辑/章节等）不加此类，维持原整页滚。 */
+.screen--dual { height: 100%; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; }
+.screen--dual > .bar { flex: 0 0 auto; }
+.screen--dual .vwrap { flex: 1 1 auto; min-height: 0; align-items: stretch; overflow: hidden; }
+.screen--dual .vnav { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.screen--dual .vpanel { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.screen--dual .me-foot { flex: 0 0 auto; }
 .secrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px;
   padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .secrow .st { font-weight: 600; font-size: 1.05em; }

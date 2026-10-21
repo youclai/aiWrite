@@ -49,6 +49,24 @@ function eq(a, b, m) {
     eq(CLEAN.strip(''), '');
     eq(CLEAN.strip('   \n  '), '');
   });
+  // 固定输出契约（本轮完善）：命中 <正文>…</正文> 只取内层，越格式的客套/解释全丢
+  await check('clean：命中 <正文> 包裹 → 只取内层，包裹外的客套与追问全丢', () => {
+    eq(CLEAN.strip('当然可以！以下是续写：\n<正文>夜色沉下来，李四推门而入。</正文>\n需要我再改吗？'), '夜色沉下来，李四推门而入。');
+  });
+  await check('clean：<正文> 内多段保留、仅去首尾空行', () => {
+    eq(CLEAN.strip('<正文>\n第一段。\n\n第二段。\n</正文>'), '第一段。\n\n第二段。');
+  });
+  await check('clean：无标记时回退旧启发式（向后兼容）', () => {
+    eq(CLEAN.strip('以下是结果：\n“正文。”'), '正文。');
+  });
+  await check('clean：extractDelimited 命中返回内层、否则 null', () => {
+    eq(CLEAN._internal.extractDelimited('x<正文>ABC</正文>y'), 'ABC');
+    eq(CLEAN._internal.extractDelimited('无标记'), null);
+  });
+  await check('clean：多个 <正文> 取最长（跳过空回显/短废话块）', () => {
+    eq(CLEAN._internal.extractDelimited('说明<正文></正文>废话<正文>真正文在这里</正文>尾'), '真正文在这里');
+    eq(CLEAN.strip('好的<正文></正文>\n<正文>夜色沉下来。</正文>还要改吗'), '夜色沉下来。');
+  });
 
   /* ===== providers.js ===== */
   await check('providers：DeepSeek 预设生成 openai 兼容请求（url/头/body/stream）', () => {
@@ -174,6 +192,33 @@ function eq(a, b, m) {
     const r = PR.build(ctx);
     assert(r.locked, '未标 locked');
     assert(r.prompt.indexOf('选'.repeat(4000)) >= 0, '选段仍被裁了！');
+  });
+
+  /* ===== prompt.js · 输出契约（本轮完善） ===== */
+  await check('prompt：产出正文的动作附 [输出格式] 契约（<正文> 包裹 + 整体替换措辞）', () => {
+    const ctx = baseCtx(); ctx.template = { name: '润色', instruction: '润色', kind: 'polish' };
+    const r = PR.build(ctx);
+    assert(r.prompt.indexOf('[输出格式]') >= 0, '缺 [输出格式] 块');
+    assert(r.prompt.indexOf('<正文>') >= 0 && r.prompt.indexOf('</正文>') >= 0, '缺 <正文> 包裹标记');
+    assert(r.prompt.indexOf('整体替换') >= 0, '改写类应说明整体替换');
+  });
+  await check('prompt：续写契约强调只写新增、切勿重复选段', () => {
+    const ctx = baseCtx(); ctx.template = { name: '续写', instruction: '续写', kind: 'continue' };
+    const r = PR.build(ctx);
+    assert(r.prompt.indexOf('切勿重复选段') >= 0, '续写缺勿重复选段约束');
+  });
+  await check('prompt：一致性检查不加 [输出格式]（避免污染 JSON）', () => {
+    const ctx = baseCtx(); ctx.template = { name: '一致性', instruction: '检查', kind: 'consistency' };
+    const r = PR.build(ctx);
+    assert(r.prompt.indexOf('[输出格式]') < 0, '一致性不应含输出格式块');
+  });
+  await check('prompt：输出格式块随指令永不裁剪（小预算仍在）', () => {
+    const ctx = baseCtx(); ctx.template = { name: '润色', instruction: '润色', kind: 'polish' };
+    ctx.beforeText = '填充。'.repeat(2000); ctx.afterText = '填充。'.repeat(2000);
+    ctx.settings.token_budget = 300;
+    const r = PR.build(ctx);
+    assert(r.prompt.indexOf('<正文>') >= 0, '超预算时输出格式块被裁了！');
+    assert(r.prompt.indexOf('[指令]') >= 0, '指令被裁！');
   });
 
   /* ===== consistency.js ===== */

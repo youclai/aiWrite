@@ -174,6 +174,21 @@
         { sql: "UPDATE templates SET instruction='逐条检查下文中的人设崩塌、称呼不一致、时间线矛盾、视角越界与设定冲突。每条输出含 quote（原文片段）、type（类型）、problem（问题）、suggestion（建议）的 JSON 数组。' WHERE kind='consistency' AND is_builtin=1" },
         { sql: "UPDATE templates SET instruction='用 80 字左右概括本章：分点列出主要事件、关键转折、情绪走向，只列事实，不评价。' WHERE kind='summary' AND is_builtin=1" }
       ]
+    },
+    {
+      // 回收站：三层（作品/章节/节）软删除标记。deleted_at IS NULL=正常，非空=移入回收站的时间戳(ms)。
+      // SQLite ADD COLUMN 只允许可空或带默认值，这里用可空列，老库平滑升级、旧行自动为 NULL。
+      // 逐条单语句 up，兼容真机 CapacitorSQLite 走 exec 单语句迁移（勿拼多语句）。
+      version: 6,
+      name: '回收站：软删除标记（作品/章节/节 deleted_at）',
+      up: [
+        { sql: 'ALTER TABLE books ADD COLUMN deleted_at INTEGER' },
+        { sql: 'ALTER TABLE chapters ADD COLUMN deleted_at INTEGER' },
+        { sql: 'ALTER TABLE sections ADD COLUMN deleted_at INTEGER' },
+        { sql: 'CREATE INDEX idx_books_trash ON books(deleted_at)' },
+        { sql: 'CREATE INDEX idx_chapters_trash ON chapters(deleted_at)' },
+        { sql: 'CREATE INDEX idx_sections_trash ON sections(deleted_at)' }
+      ]
     }
   ];
 

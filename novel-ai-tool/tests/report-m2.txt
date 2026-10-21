@@ -1,8 +1,8 @@
-M2 数据层测试  2026-10-19T10:40:00.632Z
-node:sqlite 版本 3.51.3   schema LATEST=v5
+M2 数据层测试  2026-10-21T11:41:42.941Z
+node:sqlite 版本 3.51.3   schema LATEST=v6
 
-PASS  全新库 fromVersion=0 toVersion=5
-PASS  user_version 已写入 5
+PASS  全新库 fromVersion=0 toVersion=6
+PASS  user_version 已写入 6
 PASS  十张业务表全部建出
 PASS  内置模板 6 个 + v2 摘要模板 = 7
 PASS  FTS 能探到 trigram（中文子串可检索）

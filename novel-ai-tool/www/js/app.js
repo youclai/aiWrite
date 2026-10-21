@@ -73,6 +73,7 @@
       var r = this.resolve();
       var view = root.NOVEL_VIEWS[r.view];
       this.el.innerHTML = '';
+      this.el.className = 'screen';   // 每路由复位：双栏屏由视图再加 .screen--dual，避免跨路由残留
       if (!view) { this.el.textContent = '未知界面：' + r.view; return; }
       var self = this;
       // 视图既支持注册为裸函数（现状），也兼容 {render} 对象；避免 view.render 对裸函数为 undefined 而崩溃
@@ -158,6 +159,20 @@
       try { root.history.length > 1 && root.history.back(); } catch (e) {}
     },
 
+    /* ---------- 回收站到点真删（生命周期） ----------
+       仅当存储设置 temp_auto_clean 为真才执行 purgeExpired(temp_keep_days||7)；
+       60s 内节流防抖（启动/回前台多次触发只跑一次）。失败不抛异常，静默降级。 */
+    _purgeAt: 0,
+    runPurge: function () {
+      var t = Date.now();
+      if (this._purgeAt && (t - this._purgeAt) < 60000) return Promise.resolve(0);
+      this._purgeAt = t;
+      return DB.getSetting('storage').then(function (stg) {
+        if (!stg || !stg.temp_auto_clean) return 0;   // 未开启自动清理：什么都不做
+        return DB.purgeExpired(stg.temp_keep_days || 7);
+      }).catch(function (e) { console.log('[app] purge 失败', e); return 0; });
+    },
+
     toast: function (msg, kind) {
       var t = document.getElementById('toast');
       if (!t) { t = document.createElement('div'); t.id = 'toast'; document.body.appendChild(t); }
@@ -186,11 +201,17 @@
         try { var r = self.state.flush(); if (r && r.catch) r.catch(function () {}); } catch (e) { /* 落盘失败已在守卫内保脏重试 */ }
       }
       if (root.document && root.document.addEventListener) {
-        root.document.addEventListener('visibilitychange', function () { if (root.document.hidden) flushDraft(); });
+        root.document.addEventListener('visibilitychange', function () {
+          if (root.document.hidden) flushDraft();
+          else self.runPurge();   // 回到可见：触发一次到点真删（60s 节流）
+        });
       }
       if (A && A.addListener) {
         A.addListener('pause', flushDraft);
-        A.addListener('appStateChange', function (s) { if (s && s.isActive === false) flushDraft(); });
+        A.addListener('appStateChange', function (s) {
+          if (s && s.isActive === false) flushDraft();
+          else if (s && s.isActive === true) self.runPurge();   // 回前台：触发一次到点真删
+        });
       }
 
       root.NOVEL_BOOT.boot().then(function (rep) {
@@ -206,6 +227,7 @@
       }).then(function () {
         if (!self.state.report || !self.state.report.ready) return;   // 数据层未就绪时不渲染（上面已提示）
         if (!root.location.hash) root.location.hash = '#/shelf';
+        self.runPurge();   // 首屏渲染前触发一次到点真删（fire-and-forget，不阻塞渲染）
         self.render();
       });
     }

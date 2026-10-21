@@ -11,6 +11,8 @@
   PASS extractMarked 偏移
   PASS extractMarked 无标记返回 null
   PASS mapToClean 跳过标记符
+  PASS mapToClean 跳过孤立标记
+  PASS stripMarkers 去孤立标记
   PASS debounce 连点仅排队一次(未触发)
   PASS debounce 到点执行一次
 == NOVEL_ADOPT 采纳应用 ==
@@ -19,6 +21,15 @@
   PASS insert 保留原文
   PASS discard 不改正文
   PASS MODES 三选齐全
+== NOVEL_ADOPT.replace · 去重复原文 ==
+  PASS replace 剥掉逐字回显的原文前缀
+  PASS 非回显结果原样替换
+  PASS 纯回显视为无改动
+  PASS 缺 opts 时不去重（向后兼容）
+== NOVEL_ADOPT.insert · 去重复原文 ==
+  PASS insert 剥回显后只插新内容
+  PASS insert 纯回显视为无改动
+  PASS insert 非回显不误剥
 == NOVEL_SESSION 写作引擎（mock 端到端）==
   PASS executeAction 成功
   PASS 返回清洗后结果(非空)
@@ -42,4 +53,4 @@
   PASS 条目字段
   PASS 条目已落库 open
 
-合计：37 通过 / 0 失败
+合计：46 通过 / 0 失败

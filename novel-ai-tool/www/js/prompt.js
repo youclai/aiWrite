@@ -71,6 +71,19 @@
     var userHint = String(ctx.userHint || '').trim().slice(0, 500);
     if (userHint) instruction += '\n用户的补充要求：' + userHint;
 
+    // 输出契约（本轮完善）：产出正文的动作统一要求把结果放进 <正文>…</正文>，供 clean.js 确定性识别，
+    //   从根上解决“模型回显选段原文 → 替换后像另起一行新增”的问题；
+    //   一致性检查（输出 JSON）/ AI 查找（资料问答）不加，避免干扰其专用格式。续写与改写类分别约束“不复述选段”。
+    var kind = (ctx.template && ctx.template.kind) || '';
+    var isContent = kind !== 'consistency' && kind !== 'query';
+    var OUT_OPEN = '<\u6b63\u6587>', OUT_CLOSE = '<\/\u6b63\u6587>';   // <正文> / </正文>
+    var outBehave = kind === 'continue'
+      ? '你的输出是紧接在「需要处理的内容」之后的续写，只写新增的部分，切勿重复选段里已有的文字。'
+      : '你的输出会整体替换「需要处理的内容」，只写替换后的正文，切勿复述选段原文、不加任何说明。';
+    var outRule = '- 只输出可直接入稿的正文，并把全部正文放在 ' + OUT_OPEN + ' 与 ' + OUT_CLOSE + ' 之间；这对标记之外不要有任何文字。\n'
+      + '- ' + outBehave + '\n'
+      + '- 不要客套话、解释、标题或序号；即使没有可输出内容，也要输出 ' + OUT_OPEN + OUT_CLOSE + '。';
+
     // 各可选层（携带裁剪元数据）
     var useSummary = st.use_summary && ctx.template && ctx.template.use_summary !== undefined
       ? (ctx.template.use_summary || st.use_summary) : st.use_summary;   // 模板级覆盖：模板要求带摘要则带
@@ -126,6 +139,8 @@
       blocks.push('[指令]\n' + instruction);
       // selection 固定放在指令前、后文之后
       blocks.splice(blocks.length - 1, 0, sel);
+      // 输出契约块置于最内层（指令之后、随选段/指令一样永不裁剪）：产出正文的动作统一附加
+      if (isContent) blocks.push('[输出格式]\n' + outRule);
       return blocks.join('\n\n');
     }
 

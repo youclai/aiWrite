@@ -125,9 +125,10 @@
   var TPL_FIELDS = ['kind', 'name', 'instruction', 'use_summary', 'is_builtin', 'sort_order', 'created_at', 'updated_at'];
 
   function listBooks() {
-    return all('SELECT b.*, (SELECT COUNT(*) FROM chapters c WHERE c.book_id=b.id) AS chapter_count,' +
-               '(SELECT SUM(c.word_count) FROM chapters c WHERE c.book_id=b.id) AS total_words ' +
-               'FROM books b ORDER BY b.updated_at DESC', []);
+    // 回收站：只列未软删的书；chapter_count/total_words 子查询同步排除已删章，否则书架会虚报章数/字数
+    return all('SELECT b.*, (SELECT COUNT(*) FROM chapters c WHERE c.book_id=b.id AND c.deleted_at IS NULL) AS chapter_count,' +
+               '(SELECT SUM(c.word_count) FROM chapters c WHERE c.book_id=b.id AND c.deleted_at IS NULL) AS total_words ' +
+               'FROM books b WHERE b.deleted_at IS NULL ORDER BY b.updated_at DESC', []);
   }
   function createBook(b) {
     return insert('books', BOOK_FIELDS, Object.assign({ title: '未命名', author: '', synopsis: '', style_note: '' }, b));
@@ -145,7 +146,7 @@
 
   function listChapters(bookId) {
     return all('SELECT id,book_id,idx,title,summary,word_count,updated_at,length(body) AS body_len ' +
-               'FROM chapters WHERE book_id=? ORDER BY idx', [bookId]);
+               'FROM chapters WHERE book_id=? AND deleted_at IS NULL ORDER BY idx', [bookId]);
   }
   function getChapter(id) { return getRow('chapters', id); }
 
@@ -206,7 +207,7 @@
 
   function listSections(chapterId) {
     return all('SELECT id,chapter_id,book_id,idx,title,summary,word_count,updated_at,length(body) AS body_len ' +
-               'FROM sections WHERE chapter_id=? ORDER BY idx', [chapterId]);
+               'FROM sections WHERE chapter_id=? AND deleted_at IS NULL ORDER BY idx', [chapterId]);
   }
   function getSection(id) { return getRow('sections', id); }
 
@@ -255,6 +256,74 @@
   }
 
   function deleteSection(id) { return remove('sections', id); }
+
+  /* ---------- 回收站（软删除 / 恢复 / 到点真删） ----------
+     软删除只打时间戳标记，不移动内容、不落 temp/；层次化：删章连带标记其节，
+     删书连带标记其章+节（仅标记当前未删者，保证幂等）。purge 才走真 DELETE，
+     靠 FK ON DELETE CASCADE 带走快照/子节/引用项。days<=0 视作清全部已标记。 */
+
+  var DAY_MS = 86400000;
+  // kind → 主表名（供 purgeOne/回收站定位）
+  var TRASH_TABLE = { book: 'books', chapter: 'chapters', section: 'sections' };
+
+  function trashBook(id) {
+    var t = now();
+    return run('UPDATE books SET deleted_at=? WHERE id=? AND deleted_at IS NULL', [t, id])
+      .then(function () { return run('UPDATE chapters SET deleted_at=? WHERE book_id=? AND deleted_at IS NULL', [t, id]); })
+      .then(function () { return run('UPDATE sections SET deleted_at=? WHERE book_id=? AND deleted_at IS NULL', [t, id]); });
+  }
+  function trashChapter(id) {
+    var t = now();
+    return run('UPDATE chapters SET deleted_at=? WHERE id=? AND deleted_at IS NULL', [t, id])
+      .then(function () { return run('UPDATE sections SET deleted_at=? WHERE chapter_id=? AND deleted_at IS NULL', [t, id]); });
+  }
+  function trashSection(id) { return run('UPDATE sections SET deleted_at=? WHERE id=? AND deleted_at IS NULL', [now(), id]); }
+
+  function restoreBook(id) {
+    return run('UPDATE books SET deleted_at=NULL WHERE id=?', [id])
+      .then(function () { return run('UPDATE chapters SET deleted_at=NULL WHERE book_id=?', [id]); })
+      .then(function () { return run('UPDATE sections SET deleted_at=NULL WHERE book_id=?', [id]); });
+  }
+  function restoreChapter(id) {
+    return run('UPDATE chapters SET deleted_at=NULL WHERE id=?', [id])
+      .then(function () { return run('UPDATE sections SET deleted_at=NULL WHERE chapter_id=?', [id]); });
+  }
+  function restoreSection(id) { return run('UPDATE sections SET deleted_at=NULL WHERE id=?', [id]); }
+
+  // 回收站列表：三类分别取已标记行，按移入时间倒序；get* 仍可直取被删行（恢复/详情用）
+  function listTrash() {
+    return Promise.all([
+      all('SELECT * FROM books WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC', []),
+      all('SELECT id,book_id,idx,title,word_count,deleted_at FROM chapters WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC', []),
+      all('SELECT id,chapter_id,book_id,idx,title,word_count,deleted_at FROM sections WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC', [])
+    ]).then(function (r) { return { books: r[0], chapters: r[1], sections: r[2] }; });
+  }
+
+  // 单条彻底删除：硬删一行（父级被删时靠 FK CASCADE 连带其子项）
+  function purgeOne(kind, id) {
+    var table = TRASH_TABLE[kind];
+    if (!table) return Promise.reject(new Error('未知回收站类型: ' + kind));
+    return remove(table, id);
+  }
+
+  // 清空回收站：全硬删，books→chapters→sections 顺序，靠 CASCADE 带走级联项
+  function emptyTrash() {
+    return run('DELETE FROM books WHERE deleted_at IS NOT NULL', [])
+      .then(function () { return run('DELETE FROM chapters WHERE deleted_at IS NOT NULL', []); })
+      .then(function () { return run('DELETE FROM sections WHERE deleted_at IS NOT NULL', []); });
+  }
+
+  // 到点真删：超期（移入时间 <= now-days*天）硬删；days<=0 视作清全部已标记
+  function purgeExpired(days) {
+    var marked = 'deleted_at IS NOT NULL';
+    var where = (days <= 0) ? marked : (marked + ' AND deleted_at <= ?');
+    var args = (days <= 0) ? [] : [now() - days * DAY_MS];
+    var total = 0;
+    return run('DELETE FROM books WHERE ' + where, args)
+      .then(function (r) { total += (r && r.changes) || 0; return run('DELETE FROM chapters WHERE ' + where, args); })
+      .then(function (r) { total += (r && r.changes) || 0; return run('DELETE FROM sections WHERE ' + where, args); })
+      .then(function (r) { return total + ((r && r.changes) || 0); });
+  }
 
   /* ---------- 快照与回滚 ---------- */
 
@@ -409,14 +478,14 @@
       return all("SELECT c.id, c.idx, c.title, c.book_id, " +
                  "snippet(" + S.FTS_TABLE + ", 1, '[', ']', '\u2026', 16) AS sn " +
                  "FROM " + S.FTS_TABLE + " f JOIN chapters c ON c.id = f.rowid " +
-                 "WHERE " + S.FTS_TABLE + " MATCH ? AND c.book_id = ? ORDER BY rank LIMIT ?",
+                 "WHERE " + S.FTS_TABLE + " MATCH ? AND c.book_id = ? AND c.deleted_at IS NULL ORDER BY rank LIMIT ?",
         [phrase, bookId, max]).then(function (rows) {
           return rows.map(function (r) { return Object.assign({}, r, { engine: info.ftsMode }); });
         });
     }
     return all('SELECT id, idx, title, book_id, ' +
                'substr(body, max(1, instr(body, ?) - 20), 60) AS sn ' +
-               'FROM chapters WHERE book_id = ? AND (body LIKE ? OR title LIKE ?) ORDER BY idx LIMIT ?',
+               'FROM chapters WHERE book_id = ? AND deleted_at IS NULL AND (body LIKE ? OR title LIKE ?) ORDER BY idx LIMIT ?',
       [q, bookId, '%' + q + '%', '%' + q + '%', max])
         .then(function (rows) { return rows.map(function (r) { return Object.assign({}, r, { engine: 'like' }); }); });
   }
@@ -445,6 +514,9 @@
     listSections: listSections, getSection: getSection, createSection: createSection,
     saveSectionBody: saveSectionBody, saveSectionDraft: saveSectionDraft, saveSectionMeta: saveSectionMeta,
     reorderSections: reorderSections, deleteSection: deleteSection,
+    trashBook: trashBook, trashChapter: trashChapter, trashSection: trashSection,
+    restoreBook: restoreBook, restoreChapter: restoreChapter, restoreSection: restoreSection,
+    listTrash: listTrash, purgeExpired: purgeExpired, emptyTrash: emptyTrash, purgeOne: purgeOne,
     listSnapshots: listSnapshots, getSnapshot: getSnapshot, rollback: rollback,
     listCharacters: listCharacters, saveCharacter: saveCharacter, deleteCharacter: deleteCharacter,
     listFactions: listFactions, saveFaction: saveFaction, deleteFaction: deleteFaction,

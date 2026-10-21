@@ -65,6 +65,9 @@ const G = globalThis;
     eq('extractMarked 无标记返回 null', U.extractMarked('纯正文无标记'), null);
     // mapToClean：带标记串上的光标坐标 → 干净串坐标（'ab'+O+'cd'+C 干净为 'abcd'）
     eq('mapToClean 跳过标记符', U.mapToClean('ab' + O + 'cd' + C, 4, 5), { start: 3, end: 4 });
+    // 残留不成对标记时，系统选区仍能正确映射到干净坐标（“与定位等效”的底层保证）
+    eq('mapToClean 跳过孤立标记', U.mapToClean('a' + O + 'bc', 3, 4), { start: 2, end: 3 });
+    eq('stripMarkers 去孤立标记', U.stripMarkers('a' + O + 'bc'), 'abc');
   }
   {
     let clock = { id: null, setTimeout(fn, ms) { this.fn = fn; this.id = ms; }, clearTimeout() { this.id = null; } };
@@ -93,6 +96,52 @@ const G = globalThis;
     eq('discard 不改正文', [r.changed, r.newBody], [false, body]);
   }
   ok('MODES 三选齐全', G.NOVEL_ADOPT.MODES.length === 3);
+
+  /* ---------- adopt.replace 去重复选段原文兑底（本轮完善）---------- */
+  log('== NOVEL_ADOPT.replace · 去重复原文 ==');
+  {
+    const b = '他走进房间。桌上有杯水。';
+    // 模型把选段逐字回显在结果开头：replace 应剥掉重复原文，真正覆盖而非新增一行
+    const r = G.NOVEL_ADOPT.applyResult('replace', b, 0, 6, '他走进房间。屋里光线昏暗。', { selection: '他走进房间。' });
+    eq('replace 剥掉逐字回显的原文前缀', r.newBody, '屋里光线昏暗。桌上有杯水。');
+  }
+  {
+    const b = '他走进房间。桌上有杯水。';
+    // 正常改写不以原文开头 → 不误剥
+    const r = G.NOVEL_ADOPT.applyResult('replace', b, 0, 6, '夜色降临。', { selection: '他走进房间。' });
+    eq('非回显结果原样替换', r.newBody, '夜色降临。桌上有杯水。');
+  }
+  {
+    const b = '他走进房间。桌上有杯水。';
+    // 结果就是原文回显 → 剥完为空 → changed:false，不做无意义改动
+    const r = G.NOVEL_ADOPT.applyResult('replace', b, 0, 6, '他走进房间。', { selection: '他走进房间。' });
+    eq('纯回显视为无改动', r.changed, false);
+  }
+  {
+    const b = '他走进房间。桌上有杯水。';
+    // 不传 opts（旧调用）→ 行为不变，向后兼容
+    const r = G.NOVEL_ADOPT.applyResult('replace', b, 0, 6, '他走进房间。改。');
+    eq('缺 opts 时不去重（向后兼容）', r.newBody, '他走进房间。改。桌上有杯水。');
+  }
+
+  /* ---------- adopt.insert 去重复选段原文（续写常用，本轮补防御）---------- */
+  log('== NOVEL_ADOPT.insert · 去重复原文 ==');
+  {
+    const b = '他走进房间。桌上有杯水。';
+    // 续写时模型把选段又复述在结果开头：insert 已保留原文，应剥掉重复只插新内容
+    const r = G.NOVEL_ADOPT.applyResult('insert', b, 6, 6, '他走进房间。屋里很安静。', { selection: '他走进房间。' });
+    eq('insert 剥回显后只插新内容', r.newBody, '他走进房间。\n屋里很安静。\n桌上有杯水。');
+  }
+  {
+    const b = '他走进房间。桌上有杯水。';
+    const r = G.NOVEL_ADOPT.applyResult('insert', b, 6, 6, '他走进房间。', { selection: '他走进房间。' });
+    eq('insert 纯回显视为无改动', r.changed, false);
+  }
+  {
+    const b = '他走进房间。桌上有杯水。';
+    const r = G.NOVEL_ADOPT.applyResult('insert', b, 6, 6, '屋里很安静。', { selection: '他走进房间。' });
+    eq('insert 非回显不误剥', r.newBody, '他走进房间。\n屋里很安静。\n桌上有杯水。');
+  }
 
   /* ---------- session.executeAction：mock 润色 ---------- */
   log('== NOVEL_SESSION 写作引擎（mock 端到端）==');

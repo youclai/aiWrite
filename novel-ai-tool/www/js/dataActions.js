@@ -82,37 +82,107 @@
     return { title: b.book.title, chapters: b.chapters.length, words: b.totalWords, characters: b.characters.length };
   }
 
-  // 导入：把一段纯文本按章切分后落库。两种模式（建议 6）：
-  //   mode='new'（默认）：建新书 → 逐章落正文（reason='import'，首章覆盖空正文不快照）
-  //   mode='merge'：不建书；校验 bookId 存在后向该书末尾按序追加章节（idx 由 createChapter 取 MAX+1），
-  //     不跑去重/覆盖：与既有章重名也只追加，原章正文绝不动。
-  // 两模式统一先跑分章（looksChaptered ? split : blankSplit）再决定落库目标；
-  // 逐章链式写入，中途失败 reject 带 imported/total 供 UI 报“已成功 k/n 章 + 重试”。
+  // 单节录入（sectionOnly）：只按「第X节/点号」切节，全部追加进指定目标章的 sections 之下；
+  // 不建书不建章、章正文一字不碰；idx 由 createSection 取 MAX+1 自然接在既有节之后（§3.0/§4-B）。
+  function importSectionsOnly(deps, opts, text) {
+    var SI = mod('NOVEL_STRUCTURED_IMPORT'), DBp = deps.db;
+    if (!SI) return Promise.reject(new Error('外部导入需要 NOVEL_STRUCTURED_IMPORT'));
+    if (opts.chapterId == null || String(opts.chapterId) === '') return Promise.reject(new Error('单节录入需要选择目标章节'));
+    var cid = Number(opts.chapterId);
+    return DBp.getChapter(cid).then(function (ch) {
+      if (!ch) throw new Error('目标章节不存在（id=' + cid + '），请重新选择');
+      var parsed = SI.parseSections(text);
+      if (!parsed.sections.length)
+        return Promise.reject(new Error('未识别到任何“第X节”标题，无法按单节录入；可改用其它录入格式'));
+      var done = 0, total = parsed.sections.length, chain = Promise.resolve(0);
+      parsed.sections.forEach(function (s) {
+        chain = chain.then(function () {
+          return DBp.createSection(cid, s.title || '').then(function (sid) {
+            return DBp.saveSectionBody(sid, s.body || '').then(function () { done++; });
+          });
+        });
+      });
+      return chain.then(function () {
+        return { bookId: ch.book_id, chapterId: cid, mode: 'section', format: 'sectionOnly', chapters: 0, sections: done, title: ch.title || '' };
+      }, function (e) {
+        var err = e instanceof Error ? e : new Error((e && e.message) || String(e || '导入失败'));
+        err.imported = done; err.total = total; err.sections = done;
+        throw err;
+      });
+    });
+  }
+
+  // 导入：把一段纯文本落库。四种格式 × 两种模式（建议 6 + 外部导入规划书 v2）：
+  //   format='auto'：沿用 NOVEL_IMPORTER（looksChaptered ? split : blankSplit），只建章不建节；
+  //   format='split'（章节分开录入，旧名 'structured' 仍作别名兼容）：「章 > 节」两层树，节写 sections 挂所属章；
+  //     一个章/节标题都没有 → reject 并提示改用自动切分（不猜结构）。
+  //   format='chapterOnly'（单章录入）：只按章切、节行降级为正文并入章 body，不建节；无章标题则整篇一章。
+  //   format='sectionOnly'（单节录入）：只按节切，**并入指定目标章**（opts.chapterId），不建章、不动章正文。
+  //   mode='new'（默认）建书（书名/作者/简介优先级：界面 > 封面头解析 > 默认）；
+  //   mode='merge' 不建书，向目标书末尾按序追加，绝不改动既有章正文；重名只追加不合并。
+  // 逐章串行写入（无批量事务）；中途失败 reject 带 imported/total/sections 供 UI 报“已成功 k/n 章 + 重试”。
   function importBook(deps, opts) {
     opts = opts || {};
     var mode = opts.mode === 'merge' ? 'merge' : 'new';
+    var format = String(opts.format || 'auto');
+    if (format === 'structured') format = 'split';   // v1 旧名别名（旧调用/真机探针兼容）
+    if (['auto', 'split', 'chapterOnly', 'sectionOnly'].indexOf(format) < 0) format = 'auto';
     var IMP = mod('NOVEL_IMPORTER'), DBp = deps.db;
     if (!IMP) return Promise.reject(new Error('导入需要 NOVEL_IMPORTER'));
     var text = String(opts.text == null ? '' : opts.text);
     if (!text.trim()) return Promise.reject(new Error('导入内容为空'));
-    var parts = IMP.looksChaptered(text) ? IMP.split(text) : IMP.blankSplit(text);
-    if (!parts.length) parts = [{ title: '', body: text.trim() }];
+    if (format === 'sectionOnly') return importSectionsOnly(deps, opts, text);
 
-    // 逐章链式写入 bookId 目标书；done 记录已成功章数，失败时挂到错误对象上供可读重试
+    // 非 auto 格式统一成 units：[{title, body, sections:[{title, body}]}]，落库链路共用
+    var units = [], parsed = null;
+    if (format === 'split' || format === 'chapterOnly') {
+      var SI = mod('NOVEL_STRUCTURED_IMPORT');
+      if (!SI) return Promise.reject(new Error('外部导入需要 NOVEL_STRUCTURED_IMPORT'));
+      parsed = format === 'chapterOnly' ? SI.parseChapters(text) : SI.parse(text);
+      if (!parsed.chapters.length) {
+        if (format === 'chapterOnly') {
+          units = [{ title: '', body: text.trim(), sections: [] }];   // 无章标题→整篇一章（§3.2）
+        } else {
+          return Promise.reject(new Error('未识别到任何“第X章/第X节”标题；如只想按空行分块，请改用“按章节标题自动切分”'));
+        }
+      } else {
+        units = parsed.chapters.map(function (c) {
+          return { title: c.title, body: c.body, sections: (c.sections || []).map(function (s) { return { title: s.title, body: s.body }; }) };
+        });
+      }
+    } else {
+      var parts = IMP.looksChaptered(text) ? IMP.split(text) : IMP.blankSplit(text);
+      if (!parts.length) parts = [{ title: '', body: text.trim() }];
+      units = parts.map(function (p) { return { title: p.title, body: p.body, sections: [] }; });
+    }
+
+    // 逐章链式写入 bookId 目标书；每章下再串行写其节；done/secDone 记录进度，失败挂到错误对象供可读重试
     function writeChains(bookId, baseIdx) {
-      var done = 0, total = parts.length;
+      var done = 0, total = units.length, secDone = 0;
       var chain = Promise.resolve(0);
-      parts.forEach(function (pt, i) {
+      units.forEach(function (u, i) {
         chain = chain.then(function () {
-          return DBp.createChapter(bookId, pt.title || '第' + (baseIdx + i + 1) + '章').then(function (cid) {
-            return DBp.saveChapterBody(cid, pt.body || '', 'import').then(function () { done++; });
+          var chTitle = u.title || '第' + (baseIdx + i + 1) + '章';
+          return DBp.createChapter(bookId, chTitle).then(function (cid) {
+            return DBp.saveChapterBody(cid, u.body || '', 'import').then(function () {
+              done++;
+              var schain = Promise.resolve(0);
+              (u.sections || []).forEach(function (s) {
+                schain = schain.then(function () {
+                  return DBp.createSection(cid, s.title || '').then(function (sid) {
+                    return DBp.saveSectionBody(sid, s.body || '').then(function () { secDone++; });
+                  });
+                });
+              });
+              return schain;
+            });
           });
         });
       });
-      return chain.then(function () { return done; }, function (e) {
+      return chain.then(function () { return { chapters: done, sections: secDone }; }, function (e) {
         // 非 Error 拒绝值（字符串等）归一后再挂进度，严格模式下不可直接给原始值加属性
         var err = e instanceof Error ? e : new Error((e && e.message) || String(e || '导入失败'));
-        err.imported = done; err.total = total;
+        err.imported = done; err.total = total; err.sections = secDone;
         throw err;
       });
     }
@@ -125,16 +195,20 @@
         if (!book) return Promise.reject(new Error('目标书籍不存在（id=' + opts.bookId + '），请重新选择'));
         return DBp.listChapters(book.id).then(function (existing) {
           return writeChains(book.id, existing.length).then(function (n) {
-            return { bookId: book.id, mode: 'merge', appended: n, chapters: n, title: book.title };
+            return { bookId: book.id, mode: 'merge', format: format, appended: n.chapters, chapters: n.chapters, sections: n.sections, title: book.title };
           });
         });
       });
     }
 
-    var title = (opts.title && String(opts.title).trim()) || '导入作品';
-    return DBp.createBook({ title: title, synopsis: opts.synopsis || '' }).then(function (bookId) {
+    // 新建：书名优先级 界面填写 > 封面头解析 > '导入作品'（§3.5）；作者/简介取封面头
+    var meta = parsed ? parsed.bookMeta : {};
+    var title = (opts.title && String(opts.title).trim()) || meta.title || '导入作品';
+    var author = (opts.author && String(opts.author).trim()) || meta.author || '';
+    var synopsis = (opts.synopsis && String(opts.synopsis).trim()) || meta.synopsis || '';
+    return DBp.createBook({ title: title, author: author, synopsis: synopsis }).then(function (bookId) {
       return writeChains(bookId, 0).then(function (n) {
-        return { bookId: bookId, mode: 'new', chapters: n, title: title };
+        return { bookId: bookId, mode: 'new', format: format, chapters: n.chapters, sections: n.sections, title: title };
       });
     });
   }
