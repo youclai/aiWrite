@@ -1,5 +1,6 @@
 tools/
 node_modules/
+.qoder/
 novel-ai-tool/android/app/build/
 novel-ai-tool/android/.gradle/
 novel-ai-tool/android/local.properties
@@ -7,6 +8,10 @@ npm-cache/
 yes60.txt
 cmdlinetools.zip
 novel-ai-tool/data/
+novel-ai-tool/signing/
+novel-ai-tool/backups/
+*.keystore
+*.jks
 *.sqlite
 *.db
 __pycache__/
