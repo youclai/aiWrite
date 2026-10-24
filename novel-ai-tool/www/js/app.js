@@ -120,7 +120,12 @@
       [].forEach.call(el.querySelectorAll('.sheet'), function (s) { if (!s.hidden) { s.hidden = true; closed = true; } });
       if (closed) return true;
       var fw = el.querySelector('.fab-wrap.open');
-      if (fw) { fw.classList.remove('open'); return true; }
+      if (fw) {
+        fw.classList.remove('open');
+        var ap = fw.querySelector('.ai-pop.open');
+        if (ap) ap.classList.remove('open');
+        return true;
+      }
       var pv = el.querySelector('.preview');
       if (pv && !pv.hidden) { pv.hidden = true; return true; }
       return false;

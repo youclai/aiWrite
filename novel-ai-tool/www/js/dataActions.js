@@ -82,6 +82,50 @@
     return { title: b.book.title, chapters: b.chapters.length, words: b.totalWords, characters: b.characters.length };
   }
 
+  /* ---------- 文档识别读取（优化批次 A）：按字节魔数分流 txt / docx / 拒绝旧 .doc ----------
+     识别与降级集中在此，UI 只看 kind：{kind:'text'|'docx', text} 或 {kind:'reject', error}。
+     docx 只负责“变成纯文本”，切分/落库完全复用现有 importBook 路径（导入逻辑不变）。 */
+  function readDocument(u8) {
+    var b = u8 instanceof Uint8Array ? u8 : new Uint8Array(u8 || []);
+    function byteAt(i) { return b.length > i ? b[i] : -1; }
+    // PK\x03\x04 → ZIP 容器：当 docx 读（取 word/document.xml 正文）
+    if (byteAt(0) === 0x50 && byteAt(1) === 0x4B && byteAt(2) === 0x03 && byteAt(3) === 0x04) {
+      var DOCX = mod('NOVEL_DOCX');
+      if (!DOCX || !DOCX.extractText) return Promise.reject(new Error('docx 读取器未加载（需 docx.js/zip.js）'));
+      return DOCX.extractText(b).then(function (text) { return { kind: 'docx', text: text }; });
+    }
+    // D0 CF 11 E0 → OLE 复合文档（旧式 .doc）：明确拒绝，不猜内容
+    if (byteAt(0) === 0xD0 && byteAt(1) === 0xCF && byteAt(2) === 0x11 && byteAt(3) === 0xE0) {
+      return Promise.resolve({ kind: 'reject', error: '旧版 .doc 格式不支持：请在电脑上另存为 .docx 或 .txt 后再导入' });
+    }
+    // 其余按纯文本：UTF-8 优先、乱码回退 GB18030（复用 SI.decodeTxt）
+    var SI = mod('NOVEL_STRUCTURED_IMPORT');
+    var dec = (SI && SI.decodeTxt) ? SI.decodeTxt(b) : { text: new TextDecoder('utf-8', { fatal: false }).decode(b), encoding: 'UTF-8' };
+    return Promise.resolve({ kind: 'text', text: dec.text, encoding: dec.encoding });
+  }
+
+  /* ---------- 导入取消回滚基建（优化批次 G） ----------
+     opts.onProgress(done, total, secDone, currentTitle)  逐章（sectionOnly 逐节）回调一次，给 UI 进度条
+     opts.cancelRef = {cancelled:false}                   协作式取消：只在章/节边界检查，不打断单条 SQL
+     取消后默认硬删本次已写入内容（new 连书一起删；merge/sectionOnly 逐条删本次 createdIds），
+     绝不碰用户既有数据；非取消的失败不自动删，保留“已成功 k/n + 重试”口径。 */
+  function cancelError() { var e = new Error('已取消导入'); e.cancelled = true; return e; }
+  function rollbackIds(list, delFn) {
+    var removed = 0, failed = 0;
+    return list.reduce(function (p, id) {
+      return p.then(function () {
+        return Promise.resolve(delFn(id)).then(function () { removed++; }, function () { failed++; });
+      });
+    }, Promise.resolve()).then(function () { return { removed: removed, failed: failed }; });
+  }
+  // 取消时执行回滚并把结果挂到错误对象；回滚链自身异常不阻断“已取消”回传
+  function cancelWithRollback(err, list, delFn, unitLabel) {
+    return rollbackIds(list, delFn).then(function (rb) {
+      err.removed = rb.removed; err.rollbackFailed = rb.failed; err.rollbackUnit = unitLabel;
+      throw err;
+    }, function (e2) { err.rollbackFailed = (err.rollbackFailed || 0) + list.length; throw err; });
+  }
+
   // 单节录入（sectionOnly）：只按「第X节/点号」切节，全部追加进指定目标章的 sections 之下；
   // 不建书不建章、章正文一字不碰；idx 由 createSection 取 MAX+1 自然接在既有节之后（§3.0/§4-B）。
   function importSectionsOnly(deps, opts, text) {
@@ -89,16 +133,24 @@
     if (!SI) return Promise.reject(new Error('外部导入需要 NOVEL_STRUCTURED_IMPORT'));
     if (opts.chapterId == null || String(opts.chapterId) === '') return Promise.reject(new Error('单节录入需要选择目标章节'));
     var cid = Number(opts.chapterId);
+    var onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : null;
+    var cancelRef = opts.cancelRef || null;
     return DBp.getChapter(cid).then(function (ch) {
       if (!ch) throw new Error('目标章节不存在（id=' + cid + '），请重新选择');
       var parsed = SI.parseSections(text);
       if (!parsed.sections.length)
         return Promise.reject(new Error('未识别到任何“第X节”标题，无法按单节录入；可改用其它录入格式'));
       var done = 0, total = parsed.sections.length, chain = Promise.resolve(0);
+      var createdSectionIds = [];   // 本次已建节 id（G 回滚清单）
       parsed.sections.forEach(function (s) {
         chain = chain.then(function () {
+          if (cancelRef && cancelRef.cancelled) throw cancelError();   // 节边界生效，无半条写入风险
           return DBp.createSection(cid, s.title || '').then(function (sid) {
-            return DBp.saveSectionBody(sid, s.body || '').then(function () { done++; });
+            createdSectionIds.push(sid);
+            return DBp.saveSectionBody(sid, s.body || '').then(function () {
+              done++;
+              if (onProgress) { try { onProgress(done, total, 0, s.title || ''); } catch (e) { /* UI 回调不阻断导入 */ } }
+            });
           });
         });
       });
@@ -107,6 +159,7 @@
       }, function (e) {
         var err = e instanceof Error ? e : new Error((e && e.message) || String(e || '导入失败'));
         err.imported = done; err.total = total; err.sections = done;
+        if (err.cancelled) return cancelWithRollback(err, createdSectionIds, DBp.deleteSection, '节');
         throw err;
       });
     });
@@ -132,6 +185,8 @@
     var text = String(opts.text == null ? '' : opts.text);
     if (!text.trim()) return Promise.reject(new Error('导入内容为空'));
     if (format === 'sectionOnly') return importSectionsOnly(deps, opts, text);
+    var onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : null;
+    var cancelRef = opts.cancelRef || null;
 
     // 非 auto 格式统一成 units：[{title, body, sections:[{title, body}]}]，落库链路共用
     var units = [], parsed = null;
@@ -156,21 +211,29 @@
       units = parts.map(function (p) { return { title: p.title, body: p.body, sections: [] }; });
     }
 
-    // 逐章链式写入 bookId 目标书；每章下再串行写其节；done/secDone 记录进度，失败挂到错误对象供可读重试
-    function writeChains(bookId, baseIdx) {
+    // 逐章链式写入 bookId 目标书；每章下再串行写其节；done/secDone 记录进度，失败挂到错误对象供可读重试；
+    // G：章边界检查 cancelRef；边写边记 createdChapterIds 供取消回滚；每完成一章回调 onProgress
+    function writeChains(bookId, baseIdx, createdChapterIds) {
       var done = 0, total = units.length, secDone = 0;
       var chain = Promise.resolve(0);
       units.forEach(function (u, i) {
         chain = chain.then(function () {
+          if (cancelRef && cancelRef.cancelled) throw cancelError();   // 只在章边界生效，不在单条 SQL 里硬切
           var chTitle = u.title || '第' + (baseIdx + i + 1) + '章';
           return DBp.createChapter(bookId, chTitle).then(function (cid) {
+            createdChapterIds.push(cid);
             return DBp.saveChapterBody(cid, u.body || '', 'import').then(function () {
               done++;
+              // 每章完成回调一次（无节章进度不能停在上一有节章，取消也靠它及时生效）
+              if (onProgress) { try { onProgress(done, total, secDone, chTitle); } catch (e) { /* UI 回调不阻断导入 */ } }
               var schain = Promise.resolve(0);
               (u.sections || []).forEach(function (s) {
                 schain = schain.then(function () {
                   return DBp.createSection(cid, s.title || '').then(function (sid) {
-                    return DBp.saveSectionBody(sid, s.body || '').then(function () { secDone++; });
+                    return DBp.saveSectionBody(sid, s.body || '').then(function () {
+                      secDone++;
+                      if (onProgress) { try { onProgress(done, total, secDone, chTitle); } catch (e) {} }
+                    });
                   });
                 });
               });
@@ -179,12 +242,19 @@
           });
         });
       });
-      return chain.then(function () { return { chapters: done, sections: secDone }; }, function (e) {
+      return chain.then(function () {
+        return { chapters: done, sections: secDone };
+      }, function (e) {
         // 非 Error 拒绝值（字符串等）归一后再挂进度，严格模式下不可直接给原始值加属性
         var err = e instanceof Error ? e : new Error((e && e.message) || String(e || '导入失败'));
         err.imported = done; err.total = total; err.sections = secDone;
         throw err;
       });
+    }
+    // 取消→回滚入口：merge 逐条删本次新建章（级联其节），既有章零触碰
+    function cancelRollbackChapters(err, createdChapterIds) {
+      if (err.cancelled) return cancelWithRollback(err, createdChapterIds, DBp.deleteChapter, '章');
+      return Promise.reject(err);
     }
 
     if (mode === 'merge') {
@@ -194,8 +264,11 @@
         for (var i = 0; i < bs.length; i++) if (String(bs[i].id) === String(opts.bookId)) { book = bs[i]; break; }
         if (!book) return Promise.reject(new Error('目标书籍不存在（id=' + opts.bookId + '），请重新选择'));
         return DBp.listChapters(book.id).then(function (existing) {
-          return writeChains(book.id, existing.length).then(function (n) {
+          var createdChapterIds = [];
+          return writeChains(book.id, existing.length, createdChapterIds).then(function (n) {
             return { bookId: book.id, mode: 'merge', format: format, appended: n.chapters, chapters: n.chapters, sections: n.sections, title: book.title };
+          }, function (e) {
+            return cancelRollbackChapters(e, createdChapterIds);
           });
         });
       });
@@ -207,8 +280,18 @@
     var author = (opts.author && String(opts.author).trim()) || meta.author || '';
     var synopsis = (opts.synopsis && String(opts.synopsis).trim()) || meta.synopsis || '';
     return DBp.createBook({ title: title, author: author, synopsis: synopsis }).then(function (bookId) {
-      return writeChains(bookId, 0).then(function (n) {
+      var createdChapterIds = [];
+      return writeChains(bookId, 0, createdChapterIds).then(function (n) {
         return { bookId: bookId, mode: 'new', format: format, chapters: n.chapters, sections: n.sections, title: title };
+      }, function (e) {
+        // new 模式取消：book 是本次新盖的，deleteBook 一步还原（FK CASCADE 连带删掉本次建的章与节）
+        if (e.cancelled) {
+          return cancelWithRollback(e, [bookId], DBp.deleteBook, '章').catch(function (err2) {
+            err2.removedChapters = createdChapterIds.length;
+            throw err2;
+          });
+        }
+        throw e;
       });
     });
   }
@@ -262,8 +345,8 @@
   }
 
   root.NOVEL_DATA_ACTIONS = {
-    readBundle: readBundle, exportBook: exportBook, importBook: importBook,
+    readBundle: readBundle, exportBook: exportBook, importBook: importBook, readDocument: readDocument,
     backupNow: backupNow, restoreFrom: restoreFrom, listBackups: listBackups, storageReport: storageReport,
-    _internal: { stamp: stamp, summarize: summarize }
+    _internal: { stamp: stamp, summarize: summarize, rollbackIds: rollbackIds }
   };
 })(globalThis);

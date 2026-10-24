@@ -1,0 +1,26 @@
+  PASS C1 LATEST_VERSION=7
+  PASS C1 全新库 toVersion=7
+  PASS C1 characters 有 gender 列
+  PASS C1 characters 有 age 列
+  PASS C1 taboos 列名保留（不迁移）
+  PASS C1 两列 NOT NULL 默认空串
+  PASS C2 v6→v7 fromVersion
+  PASS C2 v6→v7 toVersion
+  PASS C2 重复 init 仍 7
+  PASS C2 旧行 gender 默认空串
+  PASS C2 旧行 age 默认空串
+  PASS C2 旧行 taboos 数据不丢
+  PASS C3 gender 存取一致
+  PASS C3 age 容纳模糊说法
+  PASS C3 taboos 承载人生走向文本
+  PASS C3 编辑后 gender 更新
+  PASS C3 编辑后 age 不丢
+  PASS C4 注入含 性别行
+  PASS C4 注入含 年龄行
+  PASS C4 注入含 人生走向行
+  PASS C4 不再出现“禁忌”字样
+  PASS C4 开关关闭不注入人生走向
+  PASS C4 开关关闭仍注入性别
+  PASS C4 空字段不产生空行
+
+合计 24 项，失败 0 项。

@@ -1,0 +1,173 @@
+  PASS NOVEL_STRUCTURED_IMPORT 已加载
+== A1 样本主链 ==
+  PASS A1 书名
+  PASS A1 作者
+  PASS A1 章数=5
+  PASS A1 首章去前缀标题
+  PASS A1 首章编号 no=1
+  PASS A1 首章含 2 节
+  PASS A1 章直正文入章 body
+  PASS A1 节正文两段齐全
+  PASS A1 节正文已去缩进(U+3000)
+  PASS A1 空章保留(第2章)
+  PASS A1 stats.chapters
+  PASS A1 stats.sections
+  PASS A1 stats.emptyChapters
+  PASS A1 stats.words 自洽
+  PASS A1 stats.words>0
+  PASS A1 空章按 §3.5 保留并记异常（唯一异常）
+== A2 封面 8 行逐行丢弃留痕 ==
+  PASS A2 metaLines=8
+  PASS A2 kept 含书名
+  PASS A2 kept 含作者
+  PASS A2 丢弃留痕含「封面」
+  PASS A2 丢弃留痕含「文体」
+  PASS A2 丢弃留痕含「类别」
+  PASS A2 丢弃留痕含「风格」
+  PASS A2 丢弃留痕含「时间」
+  PASS A2 丢弃留痕含「长度」
+  PASS A2 丢弃留痕含「阅读章显示」
+  PASS A2 丢弃留痕含「阅读节显示」
+== A3 zh2num ==
+  PASS A3 十二=12
+  PASS A3 二十一=21
+  PASS A3 一百零八=108
+  PASS A3 三=3
+  PASS A3 7=7
+  PASS A3 一万=10000
+  PASS A3 〇=0
+== A4 分类边界（单行探针 + §6.2-1 采纳的多行 parse 验证）==
+  PASS A4 第1章 章标题→chapter
+  PASS A4 第1章章标题→chapter
+  PASS A4 宽松章去前缀 title
+  PASS A4 第十二章 起风 no=12
+  PASS A4 裸题第3章 title=""
+  PASS A4 缩进句→body
+  PASS A4 第2节 节标题→section
+  PASS A4 第2节 isChapterLine=false
+  PASS A4 第2节 isSectionLine=true
+  PASS A4 6.1 归本章→dotted
+  PASS A4 6.1 sub=1
+  PASS A4 歧义句不误判为节(sections=0)
+  PASS A4 歧义句落入章正文
+== A5 点号编号全归本章、绝不新章、记不一致异常（§6.2-2 采纳护栏语义）==
+  PASS A5 仍只 1 章
+  PASS A5 两点号都归本章→2 节
+  PASS A5 首节 no 沿用所属章=1
+  PASS A5 记「编号不一致」异常
+== A6 节号复位（新章下节号重新起算）==
+  PASS A6 章数=2
+  PASS A6 首章节数=2
+  PASS A6 次章节数=1
+  PASS A6 次章首节 no=1
+== A7 章直正文与节并存互不串 ==
+  PASS A7 章直正文归章
+  PASS A7 章仍含 1 节
+  PASS A7 节正文归节且不串章
+== A8 / A8b 空单元与自动补章 ==
+  PASS A8 无节章 sections=[]
+  PASS A8b 节先于章→自动补 1 章
+  PASS A8b 补章下含 1 节
+  PASS A8b 记「自动补一章」异常
+== A9 BOM + CRLF + NBSP 缩进结果与干净样本一致 ==
+  PASS A9 章数一致
+  PASS A9 节数一致
+  PASS A9 书名一致
+  PASS A9 首章正文一致
+  PASS A9 首节正文一致
+== A10 全文无标题→chapters=0 + 异常 ==
+  PASS A10 无章
+  PASS A10 记「未识别到任何」异常
+== R3 跳号/复位不误判为换章/新单元（§2-R3）==
+  PASS R3 章数=2
+  PASS R3 节号3仍归首章(首章一1节)
+  PASS R3 次章节号复位=1
+== A5′ 紧凑件：dotted 豁免③，无空行也识别为节（方案a）==
+  PASS A5′ 仍只 1 章
+  PASS A5′ ch1 得两节(1.1/1.2)
+== 宽松形③：上一行是标题→识别；上一行是正文→拦下 ==
+  PASS 宽松形接标题→新章
+  PASS 宽松形接正文→不新增章
+== EMPTY-SEC 有标题无正文的空节保留（§3.5 Q4）==
+  PASS EMPTY-SEC 保留 1 节
+  PASS EMPTY-SEC 空节 body=""
+  PASS EMPTY-SEC stats.emptySections=1
+  PASS EMPTY-SEC 记「保留…空节」
+== F-split 三格式对同一文本的产出（§6 F-split）==
+  PASS F split 2章
+  PASS F split 首章2节
+  PASS F chapterOnly 2章
+  PASS F chapterOnly 节恒空
+  PASS F chapterOnly 节标题行并入章正文不丢字
+  PASS F sectionOnly 3节(含开头无题节)
+  PASS F sectionOnly 章行降级并入节正文不丢字
+== ENC decodeTxt：UTF-8 正常 / 非法 UTF-8 字节回退 GB18030（§6 ENC）==
+  PASS ENC UTF-8 路径 encoding
+  PASS ENC UTF-8 无替换符
+  PASS ENC GBK 字节按 UTF-8 解会乱码(含替换符)
+  PASS ENC 回退后 encoding
+  PASS ENC GB18030 解码无替换符
+== B1 structured 建新 ==
+  PASS B1 返回 chapters
+  PASS B1 返回 sections
+  PASS B1 返回 mode
+  PASS B1 返回 format=split（structured 旧名归一）
+  PASS B1 书名来自封面头
+  PASS B1 作者来自封面头
+  PASS B1 readBundle 章数
+  PASS B1 章 idx=1..5
+  PASS B1 章标题去前缀
+  PASS B1 首章 word_count>0
+  PASS B1 空章(2..5) word_count=0
+  PASS B1 首章节 idx=1..2
+  PASS B1 节 chapter_id 指向首章
+  PASS B1 节 book_id 一致
+  PASS B1 节标题去前缀
+  PASS B1 节正文完整落库
+  PASS B1 空章 body=""
+  PASS B1 snapshots=0（首存跳过快照）
+  PASS B1 节只挂首章，其余章 0 节
+== B2 structured 并入：追加且不动原章正文 ==
+  PASS B2 并入 mode
+  PASS B2 追加 5 章
+  PASS B2 并入 sections=2
+  PASS B2 原第1章正文一字未动
+  PASS B2 章总数=6
+  PASS B2 新末章 idx=6
+  PASS B2 新节挂到新章(2 节)
+  PASS B2 原章仍 0 节
+== B3 界面书名优先于封面头 ==
+  PASS B3 书名=界面填写
+== B4 auto 回归：不建节 / 保留原始标题行 ==
+  PASS B4 auto 2 章
+  PASS B4 auto 0 节
+  PASS B4 auto format
+  PASS B4 保留原始标题行(含前缀)
+  PASS B4 未建任何节
+== B5 structured 遇无结构文本 reject 含「自动切分」 ==
+  PASS B5 reject 文案含自动切分
+== B6 中途失败→imported=2/total=5，已成功章保留 ==
+  PASS B6 err.imported=2
+  PASS B6 err.total=5
+  PASS B6 已成功 2 章保留可重试
+== D1 chapterOnly 端到端：只建章不建节，节标题行不丢字 ==
+  PASS D1 chapters=2
+  PASS D1 sections=0
+  PASS D1 format
+  PASS D1 不建任何节
+  PASS D1 节标题行并入章正文
+== D2 sectionOnly 并入目标章（§6 F-sec-target）==
+  PASS D2 返回 sections=2
+  PASS D2 返回 chapters=0(不建章)
+  PASS D2 返回 format
+  PASS D2 返回 chapterId=目标章
+  PASS D2 目标章新增 2 节
+  PASS D2 节 chapter_id 全等于目标章
+  PASS D2 节 idx 续接 1,2
+  PASS D2 目标章正文一字未动
+  PASS D2 其它章正文一字未动
+  PASS D2 其它章仍 0 节
+== D3 sectionOnly 缺目标章 reject ==
+  PASS D3 缺章 reject 文案
+
+合计：146 通过 / 0 失败

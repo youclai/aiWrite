@@ -1,0 +1,26 @@
+  PASS 模块齐备
+  PASS Z1 STORE method=0
+  PASS Z1 STORE text 直读
+  PASS Z2 DEFLATE method=8
+  PASS Z2 同步 text() 报错引导 listAsync
+  PASS Z3 解压后 method=0
+  PASS Z3 解压字节一致
+  PASS Z3 解压内容
+  PASS Z4 段落整体输出
+  PASS Z4 w:del 内容不出现
+  PASS Z4 域代码不混进正文
+  PASS Z5 STORE docx 抽出章标题
+  PASS Z5 STORE docx 抽出正文
+  PASS Z6 纯文本 → kind=text
+  PASS Z6 文本原样解出
+  PASS Z6 PK 容器 → kind=docx
+  PASS Z6 docx 抽出正文
+  PASS Z6 D0CF → kind=reject
+  PASS Z6 .doc 拒绝文案可读
+  PASS Z7 非 docx 容器报错
+  PASS Z8 章数一致
+  PASS Z8 章标题树一致
+  PASS Z8 章正文一字不差
+  PASS Z9 默认 inflate 可用
+
+合计 24 项，失败 0 项。

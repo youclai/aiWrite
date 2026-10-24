@@ -37,10 +37,10 @@
     { kind: 'continue', name: '续写', instruction: '紧接选段结尾自然续写，保持文风、人称与人设一致。只输出新续写的正文，切勿重复选段里已有的文字，不总结、不预告后事。' }
   ];
 
-  function head(title, backHash) {
+  function head(title, backHash, rightSlotHtml) {
     return '<header class="bar">'
       + (backHash ? '<button class="back" data-back="' + esc(backHash) + '">‹ 返回</button>' : '<span class="brand">AI 写作助手</span>')
-      + '<h1 class="htitle">' + esc(title) + '</h1><span class="sp"></span></header>';
+      + '<h1 class="htitle">' + esc(title) + '</h1><span class="sp"></span>' + (rightSlotHtml || '') + '</header>';
   }
   // 全局返回：[data-back] 与系统返回键共用 App().navigateUp() 单一入口（行为严格一致）；
   // data-back 作为精确目标 hint 传入，无 hint 时 navigateUp 自行从当前 hash 逐级推导。
@@ -53,6 +53,33 @@
     return DB.listBooks().then(function (bs) {
       for (var i = 0; i < bs.length; i++) if (String(bs[i].id) === String(bookId)) return bs[i];
       return null;
+    });
+  }
+
+  /* ---- 顶栏「查看」速览（优化批次 C）：仅在有 bookId 的屏（章详情/节/写作页）出现右槽按钮，
+     点击下展人物设定/势力设定只读名称列表；最多约 4 行可见、超出纵向滚动；不加载正文、不跳转。 ---- */
+  function peekRight(bookId) { return bookId ? '<button class="peekbtn" id="peekBtn">查看</button>' : ''; }
+  function wirePeek(bookId) {
+    on(q('#peekBtn'), 'click', function () {
+      var panel = openSheet('peekSheet', '<div class="sh-title">速览（只读）</div>'
+        + '<div class="peek-tabs"><button data-peek="chars" class="on">人物设定</button><button data-peek="factions">势力设定</button></div>'
+        + '<div class="peek-list" id="peekList"><div class="muted">载入中…</div></div>'
+        + '<div class="row"><button class="ghost" data-closesheet>关闭</button></div>');
+      function show(kind) {
+        [].forEach.call(panel.querySelectorAll('[data-peek]'), function (b) { b.classList.toggle('on', b.getAttribute('data-peek') === kind); });
+        var box = panel.querySelector('#peekList');
+        (kind === 'chars' ? DB.listCharacters(bookId) : DB.listFactions(bookId)).then(function (rows) {
+          box.innerHTML = rows.length
+            ? rows.map(function (r) {
+                return '<div class="peek-item">' + esc(r.name || '（无名）')
+                  + (kind === 'chars' && r.role ? ' <span class="tag">' + esc(r.role) + '</span>' : '')
+                  + (kind === 'factions' && r.kind ? ' <span class="tag">' + esc(r.kind) + '</span>' : '') + '</div>';
+              }).join('')
+            : '<div class="muted">' + (kind === 'chars' ? '这本书还没有人物设定' : '这本书还没有势力设定') + '</div>';
+        }, function () { box.innerHTML = '<div class="muted">读取失败，请关闭重试</div>'; });
+      }
+      [].forEach.call(panel.querySelectorAll('[data-peek]'), function (b) { on(b, 'click', function () { show(b.getAttribute('data-peek')); }); });
+      show('chars');
     });
   }
 
@@ -121,11 +148,12 @@
       }, function (e) { ok.disabled = cont.disabled = false; App().toast('保存失败：' + ((e && e.message) || e), 'bad'); });
     });
   }
-  // 确认弹层（取代 window.confirm）
+  // 确认弹层（取代 window.confirm）；置顶 z-index，保证叠在进度/其它浮层之上
   function confirmSheet(title, msg, onYes) {
     var panel = openSheet('confirmSheet', '<div class="sh-title">' + esc(title) + '</div><div class="note">' + esc(msg) + '</div>'
       + '<div class="row"><button class="primary" data-cfy>确定</button><button class="ghost" data-closesheet>取消</button></div>');
-    on(panel.querySelector('[data-cfy]'), 'click', function () { closeSheet('confirmSheet'); onYes(); });
+    var el = q('#confirmSheet'); if (el) el.style.zIndex = '50';
+    on(panel.querySelector('[data-cfy]'), 'click', function () { el && (el.style.zIndex = ''); closeSheet('confirmSheet'); onYes(); });
   }
 
   // 列表行工具：按 id 找行 / 带确认删除
@@ -278,7 +306,7 @@
       var bookId = ch.book_id;
       App().state.bookId = bookId; App().state.chapterId = chapterId;
       return DB.listSections(chapterId).then(function (secs) {
-        screen().innerHTML = head(ch.title || '章节', '#/book/' + bookId + '/chapters')
+        screen().innerHTML = head(ch.title || '章节', '#/book/' + bookId + '/chapters', peekRight(bookId))
           + '<div class="body">'
           + '<div class="sec-head"><span class="st">' + esc(ch.title || ('第' + ch.idx + '章')) + ' · ' + secs.length + ' 节</span></div>'
           + (secs.length ? '<div class="sec-actions"><button class="primary" id="newSec">＋ 新建节</button></div>' : '')
@@ -295,6 +323,7 @@
                 + '<button class="primary eh-btn" id="newSec">＋ 创建第一节</button></div>')
           + '</div>';
         wireBack();
+        wirePeek(bookId);
         [].forEach.call(screen().querySelectorAll('[data-open]'), function (li) {
           on(li, 'click', function () { App().go(li.getAttribute('data-open')); });
         });
@@ -375,6 +404,8 @@
         + (rows.length ? '<button class="primary" id="addChar">＋ 新增</button>' : '') + '</div>';
       var list = rows.length ? rows.map(function (c) {
             var bits = [];
+            var ga = [c.gender, c.age].filter(function (x) { return x; }).join(' · ');
+            if (ga) bits.push(ga);   // 性别/年龄：有值才显示（优化批次 B）
             if (c.personality) bits.push('性格：' + esc(clip(c.personality, 60)));
             if (c.speech_style) bits.push('说话：' + esc(clip(c.speech_style, 40)));
             return '<div class="item"><div class="it-h"><span class="it-t">' + esc(c.name || '（无名）') + '</span>'
@@ -384,7 +415,7 @@
               + '<button class="ghost" data-del="' + c.id + '">删除</button></div></div>';
           }).join('')
         : '<div class="empty-hero"><div class="eh-ic">👤</div><div class="eh-t">还没有人物</div>'
-          + '<div class="eh-d">人物卡会帮助 AI 在命中角色时保持说话风格/禁忌一致。推荐至少录入主角与主要反派。</div>'
+          + '<div class="eh-d">人物卡会帮助 AI 在命中角色时保持说话风格/人生走向一致。推荐至少录入主角与主要反派。</div>'
           + '<button class="primary eh-btn" id="addChar">＋ 创建第一个人物</button></div>';
       body.innerHTML = head + list;
       function form(c) {
@@ -393,13 +424,16 @@
         sheetForm(c.id ? '编辑人物' : '新增人物', [
           { key: 'name', label: '名字', value: c.name || '' },
           { key: 'role', label: '定位（主角/配角/反派…）', value: c.role || '' },
+          { key: 'gender', label: '性别', type: 'select', options: ['未填写', '男', '女', '其他', '未知'], value: c.gender || '未填写' },
+          { key: 'age', label: '年龄（可写“二十多岁”这类模糊说法）', value: c.age || '' },
           { key: 'personality', label: '性格', type: 'textarea', value: c.personality || '' },
           { key: 'speech_style', label: '说话风格', type: 'textarea', value: c.speech_style || '' },
-          { key: 'taboos', label: '禁忌/口癖', type: 'textarea', value: c.taboos || '' },
+          { key: 'taboos', label: '人物人生走向', type: 'textarea', value: c.taboos || '' },   // 列名 taboos 不改，仅文案改名（优化批次 B）
           { key: 'background', label: '背景', type: 'textarea', value: c.background || '' }
         ], function (v) {
           return DB.saveCharacter(bookId, { name: v.name, role: v.role, personality: v.personality,
-            speech_style: v.speech_style, taboos: v.taboos, background: v.background, aliases: aliases }, c.id)
+            speech_style: v.speech_style, taboos: v.taboos, background: v.background, aliases: aliases,
+            gender: v.gender === '未填写' ? '' : v.gender, age: v.age }, c.id)
             .then(function () { renderBookChars(body, bookId); });
         });
       }
@@ -534,7 +568,7 @@
         .then(function (rs) {
         var book = rs[0], characters = rs[1], api = rs[2], ctx = rs[3];
 
-        var html = head(store.label, store.backHash()) + '<div class="body editor">'
+        var html = head(store.label, store.backHash(), peekRight(bookId)) + '<div class="body editor">'
           // 顶栏（建议 3）：标题不再无限拉伸；字数·保存态·版本包成 .chbar-meta 元信息组，紧跟标题左对齐起排
           + '<div class="chbar"><input id="chTitle" class="tin" value="' + esc(ch.title || '') + '" placeholder="' + store.titlePh + '">'
           + '<div class="chbar-meta"><span class="wc" id="wc">' + (ch.word_count || 0) + ' 字</span>'
@@ -542,15 +576,21 @@
           + '<span class="save" id="saveTag">已保存</span>'
           + (store.hasVersion ? '<button id="verBtn" class="verbtn">版本</button>' : '') + '</div></div>'
           + '<textarea id="body" class="ta" placeholder="在这里写正文，选中一段再点右下角 ✦ AI 动作…">' + esc(ch.body || '') + '</textarea>'
+          // 工具栏改版（用户 10/23）：横排 + 半透明上浮，整体抬高；AI 动作合并为「AI工具」，点击后在其左侧弹出
           + '<div class="fab-wrap" id="fabWrap">'
-          + '<div class="fab-menu" id="fabMenu">'
+          + '<div class="fab-topbar" id="fabTopbar">'
           + '<button class="fab-item tool" data-act="locate">定位</button>'
           + '<button class="fab-item tool" data-act="all">选中全文</button>'
+          + '<button class="fab-item tool" data-act="normalize">规范文本</button>'
+          + '<button class="fab-item tool" data-act="undo">↶ 撤销</button>'
+          + '<button class="fab-item tool" data-act="redo">↪ 重做</button>'
+          + '<button class="fab-item ai" id="aiToolBtn" data-act="ai">✦ AI工具</button>'
+          + '</div>'
+          + '<div class="ai-pop" id="aiPop">'
           + BUILTIN.filter(function (b) { return b.kind !== 'dialogue'; }).map(function (b) { return '<button class="fab-item" data-kind="' + b.kind + '">' + b.name + '</button>'; }).join('')
           + '<button class="fab-item tool" data-act="query">AI查找</button>'
-          + '<button class="fab-item" id="moreAct">⋯ 更多</button>'
           + '</div>'
-          + '<button class="fab-main" id="fabBtn">AI</button></div>'
+          + '<button class="fab-main" id="fabBtn">工具</button></div>'
           + '<div class="preview" id="pv" hidden>'
           + '<div class="pvhead"><span id="pvTitle">AI 结果</span><span class="sp"></span>'
           + '<span id="pvMeta" class="meta"></span></div>'
@@ -560,6 +600,7 @@
           + '<div class="sheet" id="sheet" hidden><div class="mask" data-closesheet></div><div class="panel" id="sheetPanel"></div></div>';
         screen().innerHTML = html;
         wireBack();
+        wirePeek(bookId);
 
         var ta = q('#body'), wcEl = q('#wc'), saveTag = q('#saveTag');
         var pv = q('#pv'), pvBody = q('#pvBody'), pvFoot = q('#pvFoot'), pvMeta = q('#pvMeta'), pvTitle = q('#pvTitle');
@@ -577,7 +618,83 @@
         });
         function commit() { guard.flushNow(); }   // runAction 前把手改落盘（草稿，不快照）
         App().state.flush = function () { return guard.flushNow(); };   // 路由切换/切后台/返回键前强制落盘
-        on(ta, 'input', function () { var cv = U.stripMarkers(ta.value); wcEl.textContent = DB.countWords(cv) + ' 字'; guard.mark(cv); });
+        on(ta, 'input', function () { var cv = U.stripMarkers(ta.value); wcEl.textContent = DB.countWords(cv) + ' 字'; guard.mark(cv); scheduleUndoTick(); });
+
+        // ---- 会话内撤回/重做（优化批次 F）：纯内存双栈，只保本次编辑器停留期间；离开即随闭包丢弃 ----
+        //   打字按 500ms 防抖合并成一步；AI 采纳/规范文本这类不触发 input 的程序化写回，
+        //   写回前显式 programmaticPre 存“改前态”；撤销/重做后走 guard.mark 落盘，字数/保存态同步。
+        var undo = root.NOVEL_UNDO.create({ max: 80 });
+        var undoDeb = null;
+        function curState() { return { text: U.stripMarkers(ta.value), sel: { start: ta.selectionStart, end: ta.selectionEnd } }; }
+        function scheduleUndoTick() {
+          if (undoDeb != null) return;   // 已在窗口内：连续打字合并为一步
+          undoDeb = root.setTimeout(function () {
+            undoDeb = null;
+            var st = curState(); undo.current(st.text, st.sel); refreshUndoBtns();
+          }, 500);
+        }
+        function refreshUndoBtns() {
+          var st = curState();
+          var ub = screen().querySelector('.fab-item[data-act="undo"]'), rb = screen().querySelector('.fab-item[data-act="redo"]');
+          if (ub) ub.disabled = !undo.canUndo(st.text);
+          if (rb) rb.disabled = !undo.canRedo();
+        }
+        function undoApply(st) {
+          if (undoDeb != null) { root.clearTimeout(undoDeb); undoDeb = null; }   // 防旧定时器把新态当成打字段冲入
+          ta.value = st.text;
+          var s = Math.min(st.sel.start, st.text.length), e = Math.max(s, Math.min(st.sel.end, st.text.length));
+          ta.selectionStart = s; ta.selectionEnd = e;
+          wcEl.textContent = DB.countWords(st.text) + ' 字';
+          guard.mark(st.text);
+          refreshUndoBtns();
+        }
+        function doUndo() {
+          var st = curState();
+          var got = undo.undo(st.text, st.sel);
+          if (!got) { App().toast('没有可撤销的改动', 'warn'); return; }
+          undoApply(got); App().toast('已撤销', 'ok');
+        }
+        function doRedo() {
+          var st = curState();
+          var got = undo.redo(st.text, st.sel);
+          if (!got) { App().toast('没有可重做的改动', 'warn'); return; }
+          undoApply(got); App().toast('已重做', 'ok');
+        }
+        // 基线：进编辑器时的干净正文
+        undo.reset(U.stripMarkers(ta.value), { start: ta.selectionStart, end: ta.selectionEnd });
+        refreshUndoBtns();
+
+        // ---- 规范文本（优化批次 E）：本地纯函数，不经 AI、不受 API 门禁；有选区规范选区，无选区二次确认后规范全篇 ----
+        function applyNormalize(s, e) {
+          var TN = root.NOVEL_TEXT_NORM;
+          if (!TN) { App().toast('规范文本模块未加载', 'bad'); return; }
+          var cur = U.stripMarkers(ta.value);
+          var seg = cur.slice(s, e);
+          var r = TN.normalize(seg);
+          if (!r.count) { App().toast('所选内容没有有效文字', 'warn'); return; }
+          if (r.text === seg) { App().toast('已经是规范格式', 'ok'); return; }
+          undo.programmaticPre(cur, { start: ta.selectionStart, end: ta.selectionEnd });
+          var nv = cur.slice(0, s) + r.text + cur.slice(e);
+          ta.value = nv;
+          var caret = Math.min(nv.length, s + r.text.length);
+          ta.selectionStart = ta.selectionEnd = caret;
+          undo.programmaticPost(nv, { start: caret, end: caret });
+          wcEl.textContent = DB.countWords(nv) + ' 字';
+          guard.mark(nv);
+          refreshUndoBtns();
+          App().toast('已规范 ' + r.count + ' 段，可点「撤销」恢复', 'ok');
+        }
+        function doNormalize() {
+          if (ta.selectionStart !== ta.selectionEnd) {
+            var mc = U.mapToClean(ta.value, ta.selectionStart, ta.selectionEnd);
+            applyNormalize(mc.start, mc.end);
+            return;
+          }
+          confirmSheet('规范全篇文本', '将把整篇正文每段首行缩进两个全角空格、每段独占一行（空行折叠）；不删任何字，可用「撤销」恢复。确认执行？', function () {
+            var cur = U.stripMarkers(ta.value);
+            applyNormalize(0, cur.length);
+          });
+        }
 
         // ---- 标题保存 ----
         var titleDeb = root.NOVEL_UTIL.debounce(function () { store.saveMeta({ title: q('#chTitle').value }); }, 700);
@@ -710,8 +827,13 @@
               // 把选区原文一并交给采纳器：replace 时可剥掉模型偶发回显的重复原文，真正做到“覆盖”而非“新增一行”
               var ap = root.NOVEL_ADOPT.applyResult(mode, cur, c.start, c.end, res.cleaned, { selection: cur.slice(c.start, c.end) });
               if (ap.changed) {
+                // 程序化写回前存“改前态”（F）：撤销可退回采纳前；写回后基线更新为新态
+                var st0 = curState();
+                undo.programmaticPre(st0.text, st0.sel);
                 ta.value = ap.newBody;
                 ta.selectionStart = ta.selectionEnd = ap.caret;
+                undo.programmaticPost(ap.newBody, { start: ap.caret, end: ap.caret });
+                refreshUndoBtns();
                 // 采纳走 store.saveBody：章级覆盖旧正文→自动快照（F09 可回滚）；节级只存最新正文
                 store.saveBody(ap.newBody).then(function (n) {
                   ch.body = ap.newBody; wcEl.textContent = n + ' 字'; saveTag.textContent = '已保存';
@@ -828,13 +950,17 @@
           });
         }
 
-        // ---- FAB：主钮开合菜单，点子项即执行并收起；点正文自动收起 ----
-        var fabWrap = q('#fabWrap');
-        on(q('#fabBtn'), 'click', function (e) { e.stopPropagation(); fabWrap.classList.toggle('open'); });
-        on(ta, 'click', function () { fabWrap.classList.remove('open'); });
+        // ---- FAB：主钮开合横排工具栏；「AI工具」在横栏左侧弹出动作组；点正文/外部自动收起 ----
+        var fabWrap = q('#fabWrap'), aiPop = q('#aiPop');
+        function closeToolLayers() { fabWrap.classList.remove('open'); aiPop.classList.remove('open'); }
+        on(q('#fabBtn'), 'click', function (e) { e.stopPropagation(); fabWrap.classList.toggle('open'); refreshUndoBtns(); });
+        on(q('#aiToolBtn'), 'click', function (e) { e.stopPropagation(); aiPop.classList.toggle('open'); });
+        on(aiPop, 'click', function (e) { e.stopPropagation(); });   // 弹层内点击不冒泡到横栏
+        on(root.document, 'click', function (e) { if (!fabWrap.contains(e.target)) closeToolLayers(); });
+        on(ta, 'click', closeToolLayers);
         [].forEach.call(fabWrap.querySelectorAll('.fab-item[data-kind]'), function (b) {
           on(b, 'click', function () {
-            fabWrap.classList.remove('open');
+            closeToolLayers();
             var kind = b.getAttribute('data-kind');
             askHintThenRun(BUILTIN.filter(function (x) { return x.kind === kind; })[0]);
           });
@@ -842,14 +968,17 @@
         [].forEach.call(fabWrap.querySelectorAll('.fab-item[data-act]'), function (b) {
           on(b, 'click', function () {
             var act = b.getAttribute('data-act');
-            fabWrap.classList.remove('open');
+            if (act === 'ai') return;   // 「AI工具」只负责开合弹层（已在上方单独接线）
+            closeToolLayers();
             if (act === 'locate') doLocate(false);
             else if (act === 'all') doLocate(true);
             else if (act === 'query') openQuery();
+            else if (act === 'normalize') doNormalize();
+            else if (act === 'undo') doUndo();
+            else if (act === 'redo') doRedo();
           });
         });
-        on(q('#moreAct'), 'click', function () { fabWrap.classList.remove('open'); openMore(bookId); });
-        App()._runAction = askHintThenRun;   // 供“更多”弹层（在编辑器闭包外）回调；同样先过补充要求弹层
+        App()._runAction = askHintThenRun;   // 保留接口：「⋯ 更多」入口已按优化批次 D 取舍 (a) 移除
         q('#pvFoot') && on(pv, 'click', function (e) { if (e.target.getAttribute && e.target.getAttribute('data-close') != null) closePreview(); });
 
         // ---- 版本/快照弹层（F09，仅章级）----
@@ -931,7 +1060,7 @@
         + '<h2 class="sec">上下文注入（F20–F24）</h2>'
         + sw('use_summary', '注入章节摘要', '把本章已有摘要带进提示词')
         + sw('inject_prev_summary', '注入前情摘要', '带上一章摘要做衔接')
-        + sw('inject_taboos', '注入角色禁忌/口癖', '按命中角色卡补充设定')
+        + sw('inject_taboos', '注入人物人生走向', '按命中人物卡补充设定')
         + '<div class="fld"><label>Token 预算</label><input id="bkBudget" type="number" value="' + (ctx.token_budget || 6000) + '"><div class="hint">超出按“作品设定→本章摘要→角色卡→前文→后文”五级裁剪，选段与指令永不裁</div></div>'
         + '<div class="row"><button class="primary" id="saveBk">保存</button>'
         + '<button id="dryRun">试运行(拼装提示词，不联网)</button></div>'
@@ -1291,8 +1420,8 @@
           }).join('') + '</select><div class="hint" id="bookStat"></div></div>'
         + '<div class="fld" id="fldChapter" hidden><label>目标章节</label><select id="impChapter"></select><div class="hint" id="chStat"></div></div>'
         + '<div class="fld"><label id="impBodyLab">正文</label><textarea id="impBody" rows="6"></textarea></div>'
-        + '<div class="fld"><label>或从 txt 文件读取（读入后可在上方预览/编辑）</label>'
-        + '<input type="file" id="impFile" accept=".txt,text/plain"><div class="hint" id="encHint"></div></div>'
+        + '<div class="fld"><label>或从 txt / Word(.docx) 文件读取（按文件内容自动识别，读入后可在上方预览/编辑）</label>'
+        + '<input type="file" id="impFile" accept=".txt,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"><div class="hint" id="encHint"></div></div>'
         + '<div class="row"><button class="primary" id="preCheckBtn">预检（识别结构）</button><button id="doImport" disabled>确认导入</button></div>'
         + '<div class="note" id="impNote">预检只识别不写库；确认后才落库。并入模式只追加，绝不改动既有内容；重名标题仅提示，不自动合并。</div>'
         + '</div>';
@@ -1347,22 +1476,29 @@
       [].forEach.call(body.querySelectorAll('input[name="impMode"]'), function (r) { on(r, 'change', toggleFields); });
       [].forEach.call(body.querySelectorAll('input[name="impFmt"]'), function (r) { on(r, 'change', function () { pending = null; q('#doImport').disabled = true; toggleFields(); }); });
       on(q('#impBook'), 'change', function () { showBookStat(); if (format() === 'sectionOnly') loadChapters(); });
-      // txt 文件选取：按字节读 → SI.decodeTxt（UTF-8 优先，替换符过多回退 GB18030）→ 填进粘贴框预览
+      // 文件选取：按字节读 → DA().readDocument 魔数分流（PK→docx 抽正文 / D0CF→拒绝旧 .doc / 其余→txt 解码）→ 填进粘贴框预览
       on(q('#impFile'), 'change', function () {
         var f = q('#impFile').files && q('#impFile').files[0];
         if (!f) return;
         var fr = new FileReader();
         fr.onload = function () {
           try {
-            var SI = root.NOVEL_STRUCTURED_IMPORT;
-            var dec = (SI && SI.decodeTxt) ? SI.decodeTxt(new Uint8Array(fr.result)) : { text: '', encoding: '?' };
-            q('#impBody').value = dec.text;
-            q('#encHint').textContent = '已读取 ' + f.name + ' · 检测编码：' + dec.encoding + ' · ' + dec.text.length + ' 字，可在上方预览/编辑后预检。';
-            pending = null; q('#doImport').disabled = true;
+            DA().readDocument(new Uint8Array(fr.result)).then(function (r) {
+              if (r.kind === 'reject') {
+                q('#encHint').textContent = (r.error || '不支持的文件格式') + '；可在电脑上另存后重选。';
+                App().toast(r.error || '不支持的文件格式', 'bad');
+                return;
+              }
+              q('#impBody').value = r.text;
+              q('#encHint').textContent = '已读取 ' + f.name + ' · '
+                + (r.kind === 'docx' ? 'Word 文档正文' : '检测编码：' + (r.encoding || 'UTF-8'))
+                + ' · ' + r.text.length + ' 字，可在上方预览/编辑后预检。';
+              pending = null; q('#doImport').disabled = true;
+            }, function (e) { App().toast('读取文件失败：' + ((e && e.message) || e), 'bad'); });
           } catch (e) { App().toast('读取文件失败：' + (e.message || e), 'bad'); }
         };
         fr.onerror = function () { App().toast('读取文件失败', 'bad'); };
-        fr.readAsArrayBuffer(f);
+        fr.readAsArrayBuffer(f);   // 二进制安全：docx 用 readAsText 会损坏字节
       });
       toggleFields();
 
@@ -1491,10 +1627,40 @@
         return '';
       }
 
-      // 执行导入：透传 format 与 chapterId；split/chapterOnly 报“N 章 · M 节”，sectionOnly 报“追加 M 节”
+      // 执行导入：带可见进度浮层 + 协作式取消（取消=二次确认后硬删本次已导入内容）；
+      // 非取消的失败保留现场可重试（不自动删）；split/chapterOnly 报“N 章 · M 节”，sectionOnly 报“追加 M 节”
       function doImport(pk) {
-        App().toast('导入中…');
-        DA().importBook(dataDeps(), { mode: pk.mode, bookId: pk.bookId, chapterId: pk.chapterId, title: pk.title, text: pk.text, format: pk.format }).then(function (r) {
+        var unit = pk.format === 'sectionOnly' ? '节' : '章';
+        var cancelRef = { cancelled: false };
+        var last = { done: 0, total: 0, secDone: 0 };
+        var panel = openSheet('impProgress', '<div class="sh-title">导入中</div>'
+          + '<div class="note" id="ipStat">正在准备…</div>'
+          + '<div class="pbar"><div class="pbar-fill" id="ipFill"></div></div>'
+          + '<div class="row"><button class="ghost" data-ipcancel>取消导入</button></div>'
+          + '<div class="hint">取消不会中断正在写入的一条记录，在章/节边界生效；取消将清除本次已导入的全部内容。</div>');
+        // 进度浮层期间遮罩不可点关（防误触丢失进度视图；克隆替身以去除已绑的关闭监听）
+        var shEl = q('#impProgress');
+        var mk = shEl && shEl.querySelector('.mask');
+        if (mk) { var mk2 = mk.cloneNode(false); mk.parentNode.replaceChild(mk2, mk); }
+        var stat = panel.querySelector('#ipStat'), fill = panel.querySelector('#ipFill'), cancelBtn = panel.querySelector('[data-ipcancel]');
+        on(cancelBtn, 'click', function () {
+          if (cancelRef.cancelled) return;
+          confirmSheet('取消导入', '取消将删除本次已导入的 ' + last.done + ' ' + unit
+            + (last.secDone ? '（含 ' + last.secDone + ' 节）' : '') + '，且不可恢复。确认取消？', function () {
+            cancelRef.cancelled = true;
+            cancelBtn.disabled = true; cancelBtn.textContent = '取消中…（等待当前章/节写完）';
+          });
+        });
+        function prog(done, total, secDone, title) {
+          last.done = done; last.total = total; last.secDone = secDone || 0;
+          var pct = total ? Math.min(100, Math.round(done * 100 / total)) : 0;
+          fill.style.width = pct + '%';
+          stat.textContent = '已导入 ' + done + '/' + total + ' ' + unit
+            + (secDone ? ' · ' + secDone + ' 节' : '')
+            + (title ? '（刚完成：' + clip(title, 20) + '）' : '');
+        }
+        DA().importBook(dataDeps(), { mode: pk.mode, bookId: pk.bookId, chapterId: pk.chapterId, title: pk.title, text: pk.text, format: pk.format, onProgress: prog, cancelRef: cancelRef }).then(function (r) {
+          closeSheet('impProgress');
           pending = null;
           q('#doImport').disabled = true;
           if (pk.format === 'sectionOnly') {
@@ -1506,8 +1672,17 @@
           App().toast((r.mode === 'merge' ? '已追加 ' : '已导入并建新书，共 ') + r.chapters + ' 章' + sec, 'ok');
           App().go('#/book/' + r.bookId + '/chapters');
         }, function (e) {
-          var unit = pk.format === 'sectionOnly' ? '节' : '章';
-          var part = (e && e.imported != null) ? '（已成功 ' + e.imported + '/' + e.total + ' ' + unit + '，可修正后重试）' : '';
+          closeSheet('impProgress');
+          if (e && e.cancelled) {
+            var rbFail = e.rollbackFailed ? '，' + e.rollbackFailed + ' ' + (e.rollbackUnit || unit) + '清除失败请手动删' : '';
+            var rbMsg = pk.format !== 'sectionOnly' && pk.mode === 'new'
+              ? '已取消：本次新建的书籍与已导入内容已整体清除' + (e.rollbackFailed ? '（部分清除失败，请手动删除残留）' : '')
+              : '已取消：本次导入的 ' + (e.removed != null ? e.removed : '?') + '/' + (e.imported != null ? e.imported : '?') + ' ' + unit + '已清除' + rbFail;
+            App().toast(rbMsg, 'warn');
+            App().render();   // 刷新当前页（书/章列表可能已因回滚变化）
+            return;
+          }
+          var part = (e && e.imported != null) ? '（已成功 ' + e.imported + '/' + e.total + ' ' + unit + '，已保留可修正后重试）' : '';
           App().toast('导入失败：' + ((e && e.message) || e) + part, 'bad');
         });
       }
@@ -1525,7 +1700,7 @@
     body.innerHTML = '<div class="sec-head"><span class="st">问题反馈</span></div><div class="form">'
       + '<div class="note">欢迎提出建议或提交 bug。请附上版本号与复现步骤，方便定位；邮箱是唯一反馈渠道，响应不作时效承诺。</div>'
       + '<div class="fld"><label>开发者邮箱</label><div class="fb-mail" id="fbMailText">' + FEEDBACK_EMAIL + '</div></div>'
-      + '<div class="row"><button id="fbCopy">复制邮箱</button><button class="primary" id="fbOpen">打开发送邮件</button></div>'
+      + '<div class="row"><button id="fbCopy">复制邮箱</button></div>'
       + '<h2 class="sec">反馈模板（可选，自动带入邮件正文）</h2>'
       + '<div class="fld"><label>类型</label><select id="fbKind"><option>建议</option><option>bug</option></select></div>'
       + '<div class="fld"><label>内容 / 复现步骤</label><textarea id="fbText" rows="4" placeholder="发生了什么？期望是什么？"></textarea></div>'
@@ -1545,7 +1720,6 @@
         App().toast('本机不支持直接发信：邮箱与内容已复制，请手动发送', 'warn');
       }
     }
-    on(q('#fbOpen'), 'click', function () { openMailto('[反馈] AI 写作助手', '反馈类型：\nApp 版本：' + APP_VERSION + '\n机型/系统：' + deviceInfo() + '\n内容：'); });
     on(q('#fbCompose'), 'click', function () {
       var kind = q('#fbKind').value;
       var txt = String(q('#fbText').value || '').trim();

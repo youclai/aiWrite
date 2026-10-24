@@ -131,8 +131,67 @@
     return { entries: entries, bytes: ZIP.build(entries), names: entries.map(function (e) { return e.name; }) };
   }
 
+  /* ---------- 读外部 docx（优化批次 A）：解压 + 取正文，产出纯文本后交回现有导入链路 ----------
+     不引第三方 DOM：按 <w:p>…</w:p> 切段落，段内顺序收集 <w:t> 文本与 <w:tab/>/<w:br/>；
+     域代码 <w:instrText> 与修订删除 <w:del> 包裹内文本丢弃，插入 <w:ins> 保留（普通收集即可命中）；
+     段落间用单个 \n 连接，交下游按“章节分开录入/自动切分”规则再处理。 */
+  var ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0' };
+  function decodeEntities(s) {
+    return String(s).replace(/&(amp|lt|gt|quot|apos|nbsp|#\d+|#[xX][0-9a-fA-F]+);/g, function (m, k) {
+      if (k.charAt(0) === '#') {
+        var code = k.charAt(1) === 'x' || k.charAt(1) === 'X' ? parseInt(k.slice(2), 16) : parseInt(k.slice(1), 10);
+        return (code >= 0 && code <= 0x10FFFF) ? String.fromCodePoint(code) : '';
+      }
+      return ENTITIES[k] != null ? ENTITIES[k] : m;
+    });
+  }
+
+  // 单段 XML 内容 → 纯文本（无文本返回空串）
+  function paraText(inner) {
+    var s = inner
+      .replace(/<w:instrText(?:\s[^>]*)?>[\s\S]*?<\/w:instrText>/g, '')   // 域代码不混进正文
+      .replace(/<w:noBreakHyphen\b[^>]*\/>/g, '-');
+    var out = '', RE = /<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>|<w:tab\b[^>]*\/>|<w:br\b[^>]*\/>|<w:cr\b[^>]*\/>/g, m;
+    while ((m = RE.exec(s))) {
+      if (m[1] != null) out += decodeEntities(m[1]);
+      else if (m[0].indexOf('<w:tab') === 0) out += '\t';
+      else out += '\n';   // br/cr → 换行（段内软换行保留为硬换行）
+    }
+    return out;
+  }
+
+  // document.xml → 全篇纯文本（同步，已解压的 XML 串入参；导出供测试直接验段落解析）
+  function documentToText(xml) {
+    xml = String(xml == null ? '' : xml)
+      .replace(/<w:del\b[^>]*>[\s\S]*?<\/w:del>/g, '')      // 修订“删除”包裹内文本丢弃
+      .replace(/<w:moveFrom\b[^>]*>[\s\S]*?<\/w:moveFrom>/g, '');
+    var paras = [], RE = /<w:p(?:\s[^>]*)?>([\s\S]*?)<\/w:p>/g, m;
+    while ((m = RE.exec(xml))) {
+      var t = paraText(m[1]);
+      if (t !== '') paras.push(t);   // 空段/只有标记的段丢弃，不产生多余空行
+    }
+    return paras.join('\n');
+  }
+
+  // 主入口：docx 字节（STORE/DEFLATE 都可）→ Promise<纯文本>；opts.inflate 透传 zip.listAsync（Node 测试注入 zlib）
+  function extractText(bytes, opts) {
+    var ZIP = root.NOVEL_ZIP;
+    if (!ZIP || !ZIP.listAsync) return Promise.reject(new Error('读 docx 需要 NOVEL_ZIP.listAsync（请先加载 zip.js）'));
+    return ZIP.listAsync(bytes, opts).then(function (entries) {
+      var doc = null;
+      for (var i = 0; i < entries.length; i++) if (entries[i].name === 'word/document.xml') { doc = entries[i]; break; }
+      if (!doc) throw new Error('不是有效的 Word 文档（缺 word/document.xml）；旧版 .doc 请另存为 .docx 或 .txt');
+      var text;
+      try { text = documentToText(doc.text()); } catch (e) { text = documentToText(safeDecode(doc.data)); }
+      if (!text || !text.trim()) throw new Error('文档正文为空或只含域代码/批注');
+      return text;
+    });
+  }
+  function safeDecode(u8) { try { return new TextDecoder().decode(u8); } catch (e) { return ''; } }
+
   root.NOVEL_DOCX = {
     build: build,
+    extractText: extractText, documentToText: documentToText,   // 读取侧（优化批次 A）
     // 部件生成器暴露给测试/复用
     parts: { documentXml: documentXml, stylesXml: stylesXml, headerXml: headerXml, contentTypesXml: contentTypesXml, esc: esc, para: para }
   };

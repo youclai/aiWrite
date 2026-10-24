@@ -40,8 +40,8 @@ function mkAdapter(d) {
   log('== B1 schema v6 迁移 ==');
   let d = new DatabaseSync(':memory:');
   let info = await DB.init(mkAdapter(d));
-  eq('LATEST_VERSION=6', G.NOVEL_SCHEMA.LATEST_VERSION, 6);
-  eq('toVersion=6', info.toVersion, 6);
+  eq('LATEST_VERSION=7', G.NOVEL_SCHEMA.LATEST_VERSION, 7);   // v7 加了 characters.gender/age，本套断言随最新号上调
+  eq('toVersion=7', info.toVersion, 7);
   const cols = t => d.prepare(`PRAGMA table_info(${t})`).all().map(c => c.name);
   ok('books.deleted_at', cols('books').includes('deleted_at'));
   ok('chapters.deleted_at', cols('chapters').includes('deleted_at'));
@@ -50,7 +50,7 @@ function mkAdapter(d) {
   eq('三回收站索引存在', idx, ['idx_books_trash', 'idx_chapters_trash', 'idx_sections_trash']);
   // 幂等：重复 init 不报错、不重复 ADD COLUMN（迁移只在 version>from 执行）
   const info2 = await DB.init(mkAdapter(d));
-  eq('重复 init 幂等 toVersion 仍 6', info2.toVersion, 6);
+  eq('重复 init 幂等 toVersion 仍 7', info2.toVersion, 7);
   ok('重复 init 不崩', true);
   d.close();
 
@@ -60,6 +60,7 @@ function mkAdapter(d) {
   const a5 = mkAdapter(d);
   // 手动搭一个只到 v5 的库：把 MIGRATIONS 临时截到 v5 跑一遍
   const fullMigs = G.NOVEL_SCHEMA.MIGRATIONS;
+  const fullVer = G.NOVEL_SCHEMA.LATEST_VERSION;
   G.NOVEL_SCHEMA.MIGRATIONS = fullMigs.filter(m => m.version <= 5);
   G.NOVEL_SCHEMA.LATEST_VERSION = 5;
   let infv5 = await DB.init(a5);
@@ -67,10 +68,10 @@ function mkAdapter(d) {
   ok('v5 无 deleted_at 列', !d.prepare('PRAGMA table_info(books)').all().map(c => c.name).includes('deleted_at'));
   // 恢复完整迁移表，再 init → 从 v5 升到 v6
   G.NOVEL_SCHEMA.MIGRATIONS = fullMigs;
-  G.NOVEL_SCHEMA.LATEST_VERSION = 6;
+  G.NOVEL_SCHEMA.LATEST_VERSION = fullVer;
   const infv6 = await DB.init(a5);
   eq('fromVersion=5', infv6.fromVersion, 5);
-  eq('升到 v6', infv6.toVersion, 6);
+  eq('升到最新 v7', infv6.toVersion, 7);
   ok('v6 后 books 有 deleted_at', d.prepare('PRAGMA table_info(books)').all().map(c => c.name).includes('deleted_at'));
   d.close();
 

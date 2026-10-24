@@ -121,7 +121,7 @@
 
   var BOOK_FIELDS = ['title', 'author', 'synopsis', 'style_note', 'created_at', 'updated_at'];
   var CHAPTER_FIELDS = ['book_id', 'idx', 'title', 'body', 'summary', 'word_count', 'created_at', 'updated_at'];
-  var CHAR_FIELDS = ['book_id', 'name', 'role', 'aliases', 'personality', 'speech_style', 'taboos', 'background', 'created_at', 'updated_at'];
+  var CHAR_FIELDS = ['book_id', 'name', 'role', 'aliases', 'personality', 'speech_style', 'taboos', 'background', 'gender', 'age', 'created_at', 'updated_at'];
   var TPL_FIELDS = ['kind', 'name', 'instruction', 'use_summary', 'is_builtin', 'sort_order', 'created_at', 'updated_at'];
 
   function listBooks() {
@@ -351,7 +351,8 @@
       book_id: bookId, name: c.name, role: c.role || '',
       aliases: JSON.stringify(c.aliases || []),
       personality: c.personality || '', speech_style: c.speech_style || '',
-      taboos: c.taboos || '', background: c.background || ''
+      taboos: c.taboos || '', background: c.background || '',
+      gender: c.gender || '', age: c.age || ''
     };
     return id ? update('characters', id, CHAR_FIELDS.concat(['id']), obj) : insert('characters', CHAR_FIELDS, obj);
   }

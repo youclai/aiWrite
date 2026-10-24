@@ -43,10 +43,13 @@
 
   function formatCharacter(c, injectTaboos) {
     var lines = ['- ' + c.name + (c.role ? '（' + c.role + '）' : '')];
+    if (c.gender) lines.push('  性别：' + c.gender);
+    if (c.age) lines.push('  年龄：' + c.age);
     if (c.aliases && c.aliases.length) lines.push('  别名：' + c.aliases.join('、'));
     if (c.personality) lines.push('  性格：' + c.personality);
     if (c.speech_style) lines.push('  说话风格：' + c.speech_style);
-    if (injectTaboos && c.taboos) lines.push('  禁忌：' + c.taboos);
+    // 列名仍叫 taboos（免迁移），语义已由“禁忌/口癖”转“人生走向”（优化批次 B，开关键 inject_taboos 不改）
+    if (injectTaboos && c.taboos) lines.push('  人生走向：' + c.taboos);
     return lines.join('\n');
   }
 
@@ -190,6 +193,7 @@
     build: build,
     estimateTokens: estimateTokens,
     matchCharacters: matchCharacters,
+    formatCharacter: formatCharacter,   // 暴露给测试/复用（优化批次 B：性别/年龄/人生走向行）
     paragraphs: paragraphs
   };
 })(globalThis);

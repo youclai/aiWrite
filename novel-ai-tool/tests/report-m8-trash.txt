@@ -1,0 +1,53 @@
+== B1 schema v6 迁移 ==
+  PASS LATEST_VERSION=7
+  PASS toVersion=7
+  PASS books.deleted_at
+  PASS chapters.deleted_at
+  PASS sections.deleted_at
+  PASS 三回收站索引存在
+  PASS 重复 init 幂等 toVersion 仍 7
+  PASS 重复 init 不崩
+== B1 老库 v5 → v6 升级 ==
+  PASS 老库到 v5
+  PASS v5 无 deleted_at 列
+  PASS fromVersion=5
+  PASS 升到最新 v7
+  PASS v6 后 books 有 deleted_at
+== B2 过滤/级联/恢复 ==
+  PASS 初始 listBooks 1
+  PASS 初始 listChapters 2
+  PASS 删书后 listBooks 0
+  PASS 删书级联隐藏章
+  PASS 删书级联隐藏节
+  PASS getChapter 仍可取被删章
+  PASS getSection 仍可取被删节
+  PASS 软删后 search 0 命中
+  PASS listTrash books=1
+  PASS listTrash chapters=2
+  PASS listTrash sections=1
+  PASS 恢复后 listBooks 1
+  PASS 恢复后 listChapters 2
+  PASS 恢复后回收站空
+  PASS 恢复后 search 命中
+  PASS 删单章剩 1 章
+  PASS 删单章隐藏其节
+  PASS 兄弟章 ch1 未受影响
+  PASS 恢复章后 2 章
+  PASS 恢复章带回其节
+== B3 到点真删 + CASCADE ==
+  PASS purgeExpired(7) 返删除数>0
+  PASS A 书已硬删
+  PASS A 章 getChapter 返 null
+  PASS A 节 getSection 返 null
+  PASS A 快照随 CASCADE 清除
+  PASS B 仍在回收站
+  PASS purgeExpired(0) 清剩 B
+  PASS purgeExpired(0) 后回收站空
+  PASS emptyTrash 后书消失
+  PASS emptyTrash 后回收站空
+  PASS trashSection 后节进回收站
+  PASS purgeOne 后节硬删
+  PASS purgeOne 后回收站空节
+  PASS purgeOne 未知类型报错
+
+合计：47 通过 / 0 失败

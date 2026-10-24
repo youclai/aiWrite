@@ -1,8 +1,10 @@
-/* 极简 ZIP（STORE 不压缩）读写：零第三方依赖，纯 Uint8Array 计算，Node/浏览器同源可跑。
-   够用即可——导出的都是文本类（txt/md/docx 的 XML），压缩收益小、且 STORE 让格式可控可测；
-   真机要压缩可日后把 method 换成 deflate（Node 有 zlib、WebView 有 CompressionStream），接口不变。
-   - build(entries) → Uint8Array   entries: [{name, data(string|Uint8Array)}]
-   - list(bytes)    → [{name, data(Uint8Array), text()}]   读回（测试与自检用）
+/* 极简 ZIP 读写：零第三方依赖，纯 Uint8Array 计算，Node/浏览器同源可跑。
+   导出：STORE 不压缩（产物字节稳定可测）；读取：STORE 直取 + DEFLATE(method=8) 可解压——
+   外部 Word/WPS 导出的 docx 成员是 DEFLATE 压缩，需要同源解压能力（优化批次 A）。
+   - build(entries) → Uint8Array                     entries: [{name, data(string|Uint8Array)}]
+   - list(bytes)    → [{name, data, method, text()}] 同步读；DEFLATE 成员 data 为压缩字节，text() 报错提醒走异步
+   - listAsync(bytes[, {inflate}]) → Promise<同上>    method=8 成员逐条 inflate-raw 后返回明文
+   inflate 默认用 DecompressionStream('deflate-raw')（Chromium 80+/Node 18+）；测试可注入自定义 inflate。
    文件名一律按 UTF-8 编码并置 general purpose bit 11，保证中文名跨端不乱。 */
 (function (root) {
   'use strict';
@@ -101,7 +103,8 @@
     return out;
   }
 
-  // 读回：从 EOCD 定位中央目录，逐条解析名字，再回本地头取数据
+  // 读回：从 EOCD 定位中央目录，逐条解析名字/方法/尺寸（均以中央目录为准，本地头尺寸在流式写入时可能为 0），
+  // 再回本地头取数据偏移。method=8（DEFLATE）成员的 data 是压缩字节，text() 直接报错引导走 listAsync。
   function list(bytes) {
     var buf = toBytes(bytes);
     var dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -116,22 +119,83 @@
     var res = [], ptr = cdOff;
     for (var n = 0; n < count; n++) {
       if (dv.getUint32(ptr, true) !== 0x02014b50) throw new Error('中央目录签名异常 @' + ptr);
+      var method = dv.getUint16(ptr + 10, true);
+      var compSize = dv.getUint32(ptr + 20, true);
+      var uncompSize = dv.getUint32(ptr + 24, true);
       var nameLen = dv.getUint16(ptr + 28, true);
       var extraLen = dv.getUint16(ptr + 30, true);
       var cmtLen = dv.getUint16(ptr + 32, true);
       var lho = dv.getUint32(ptr + 42, true);
       var name = new TextDecoder().decode(buf.subarray(ptr + 46, ptr + 46 + nameLen));
-      // 解析本地头拿数据偏移与大小
+      // 数据起点仍由本地头的花名/附加字段长度决定（中央目录不含本地头 extra 布局）
       var lNameLen = dv.getUint16(lho + 26, true);
       var lExtraLen = dv.getUint16(lho + 28, true);
-      var size = dv.getUint32(lho + 22, true);
+      var size = method === 8 ? compSize : uncompSize;
       var dataStart = lho + 30 + lNameLen + lExtraLen;
       var data = buf.slice(dataStart, dataStart + size);
-      res.push({ name: name, data: data, text: (function (dd) { return function () { return new TextDecoder().decode(dd); }; })(data) });
+      var entry = { name: name, data: data, method: method };
+      if (method === 0) {
+        entry.text = (function (dd) { return function () { return new TextDecoder().decode(dd); }; })(data);
+      } else if (method === 8) {
+        entry.text = function () { throw new Error('ZIP 成员是 DEFLATE 压缩，请用 listAsync/inflate 解压后再读'); };
+      } else {
+        throw new Error('不支持的 ZIP 压缩方法: ' + method + '（仅支持 store 与 deflate）');
+      }
+      res.push(entry);
       ptr += 46 + nameLen + extraLen + cmtLen;
     }
     return res;
   }
 
-  root.NOVEL_ZIP = { build: build, list: list, crc32: crc32 };
+  // inflate-raw 默认实现：DecompressionStream('deflate-raw')（Chromium 80+ / Node 18+ 都有）；
+  // 环境缺失时 reject 带 code='need-inflate'，调用方负责降级提示（勿静默产乱码）。
+  function inflateRaw(u8) {
+    try {
+      if (typeof root.DecompressionStream !== 'function' || typeof root.Blob !== 'function') throw new Error('no api');
+      var ds = new root.DecompressionStream('deflate-raw');
+      var stream = new root.Blob([u8]).stream().pipeThrough(ds);
+      var ab = typeof root.Response === 'function' ? new root.Response(stream).arrayBuffer() : streamToBuffer(stream);
+      return Promise.resolve(ab).then(function (b) { return new Uint8Array(b); });
+    } catch (e) {
+      var err = new Error('运行环境缺少 inflate 能力，无法读取压缩的 Word 文件');
+      err.code = 'need-inflate';
+      return Promise.reject(err);
+    }
+  }
+  // 无 Response 环境（理论上走不到）：手动排空可读流
+  function streamToBuffer(stream) {
+    var reader = stream.getReader(), chunks = [];
+    function pump() {
+      return reader.read().then(function (r) {
+        if (r.done) {
+          var len = chunks.reduce(function (s, c) { return s + c.length; }, 0), out = new Uint8Array(len), p = 0;
+          chunks.forEach(function (c) { out.set(c, p); p += c.length; });
+          return out.buffer;
+        }
+        chunks.push(r.value); return pump();
+      });
+    }
+    return pump();
+  }
+
+  // 异步读回：同步 list + 对 method=8 成员逐条 inflate；opts.inflate 可注入（Node 测试用 zlib）。
+  function listAsync(bytes, opts) {
+    var inflate = (opts && opts.inflate) || inflateRaw;
+    var entries;
+    try { entries = list(bytes); } catch (e) { return Promise.reject(e); }
+    return Promise.all(entries.map(function (e) {
+      if (e.method !== 8) return e;
+      return Promise.resolve(inflate(e.data)).then(function (u8) {
+        return { name: e.name, data: u8, method: 0,
+          text: (function (dd) { return function () { return new TextDecoder().decode(dd); }; })(u8) };
+      }, function (err) {
+        if (err && err.code === 'need-inflate') throw err;
+        var e2 = new Error('解压 ZIP 成员失败（' + e.name + '）：' + ((err && err.message) || err));
+        e2.code = 'inflate-failed';
+        throw e2;
+      });
+    }));
+  }
+
+  root.NOVEL_ZIP = { build: build, list: list, listAsync: listAsync, inflateRaw: inflateRaw, crc32: crc32 };
 })(globalThis);

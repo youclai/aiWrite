@@ -1,4 +1,4 @@
-boot.js 装配测试  2026-10-21T11:41:42.572Z
+boot.js 装配测试  2026-10-24T07:11:21.448Z
 
 PASS  浏览器预览：不崩、标记非原生、给出可操作提示
 PASS  SQLite 未注册时报"请执行 npm run sync"而不是 undefined 报错

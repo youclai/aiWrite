@@ -189,6 +189,16 @@
         { sql: 'CREATE INDEX idx_chapters_trash ON chapters(deleted_at)' },
         { sql: 'CREATE INDEX idx_sections_trash ON sections(deleted_at)' }
       ]
+    },
+    {
+      // 优化批次 B（2026-10-22 规划书）：人物卡加性别/年龄。均为 TEXT 可空默认串（age 容纳“二十多岁”类模糊表述），
+      // 老行自动落默认值；“禁忌”列名不动（省数据迁移），仅界面/prompt 文案改叫“人物人生走向”。
+      version: 7,
+      name: '人物卡：性别 / 年龄（gender/age 两列，默认空串）',
+      up: [
+        { sql: "ALTER TABLE characters ADD COLUMN gender TEXT NOT NULL DEFAULT ''" },
+        { sql: "ALTER TABLE characters ADD COLUMN age TEXT NOT NULL DEFAULT ''" }
+      ]
     }
   ];
 

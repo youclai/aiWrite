@@ -27,7 +27,9 @@
       if (al.length) lines.push('- 别名：' + al.join('、'));
       if (c.personality) lines.push('- 性格：' + c.personality);
       if (c.speech_style) lines.push('- 说话风格：' + c.speech_style);
-      if (c.taboos) lines.push('- 禁忌：' + c.taboos);
+      if (c.gender) lines.push('- 性别：' + c.gender);
+      if (c.age) lines.push('- 年龄：' + c.age);
+      if (c.taboos) lines.push('- 人生走向：' + c.taboos);   // 列名仍 taboos，文案随界面改口径（优化批次 B）
       lines.push('');
     });
     return lines.join('\n');

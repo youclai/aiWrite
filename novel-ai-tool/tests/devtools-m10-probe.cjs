@@ -1,99 +1,59 @@
-/* devtools-m10-probe.cjs —— 真机验证 v3.19：
-   1) apiReady 配置门禁：mock / 无 Key 一律拦截；真实 provider+Key 才放行
-   2) 未配置时点 AI 动作：预览不出现（不产结果，杜绝"结果串台"）
-   3) 定位：data-act=locate 在选区前后插入标记；stripMarkers/extractMarked 还原干净正文
-   4) 选中全文：整篇被标记包裹
-   5) 字数统计基于去标记正文（标记不污染字数、不入库）
-   6) FAB 组成：定位/选中全文/AI查找 工具项存在；快捷项已移除"转对话"
-   7) API Key 掩码框：type=text + class masked + -webkit-text-security:disc（可粘贴不可查看）
-   8) Provider 下拉无 mock，含未配置占位
-   运行：node tests/devtools-m10-probe.cjs （需先 adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>） */
+/* devtools-m10-probe.cjs —— 优化批次（A-G）真机验收探针：
+   1) boot 报告（建库/迁移是否成功）
+   2) dbInfo 版本闸：toVersion 应为 7（v6 老库真机升 v7 + gender/age 列）
+   3) 新模块加载：NOVEL_TEXTNORM / NOVEL_UNDO / NOVEL_DOCX.extractText / DA.readDocument
+   4) DecompressionStream 是否存在（真机 docx DEFLATE 解压的前提）
+   前置：adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>
+   用法：node tests/devtools-m10-probe.cjs */
 const BASE = process.env.DEV_BASE || 'http://127.0.0.1:9222';
 
-const EXPR = `(async () => {
-  const g = globalThis, A = g.NOVEL_APP, U = g.NOVEL_UTIL, db = g.NOVEL_DB;
-  const out = { checks: [], errs: [] };
-  window.addEventListener('error', e => out.errs.push('onerror: ' + (e.message || e)));
-  window.addEventListener('unhandledrejection', e => out.errs.push('reject: ' + (e.reason && (e.reason.message || e.reason))));
-  const wait = ms => new Promise(r => setTimeout(r, ms));
-
-  // === A: apiReady 门禁（纯逻辑）===
-  const native = !!A.nativeAiStream();
-  out.checks.push({ t: 'apiReady', native,
-    mock: A.apiReady({ provider: 'mock' }),
-    empty: A.apiReady({}),
-    noKey: A.apiReady({ provider: 'deepseek', key_set: false }),
-    realKey: A.apiReady({ provider: 'deepseek', key_set: true }) });
-
-  // === 备数据：书→章→节 ===
-  const bs = await db.listBooks();
-  if (!bs.length) await db.createBook({ title: 'v319验证书' });
-  const books = await db.listBooks(); const bookId = books[0].id;
-  const chapId = await db.createChapter(bookId, 'v319测试章');
-  const secId = await db.createSection(chapId, '第1节');
-  A.go('#/section/' + chapId + '/' + secId); await wait(600);
-  const ta = document.querySelector('#body.ta');
-  const clean = '甲乙丙丁戊';
-
-  // === B: 定位插入标记 ===
-  ta.value = clean; ta.dispatchEvent(new Event('input')); await wait(20);
-  ta.setSelectionRange(1, 3); // 选中 乙丙
-  document.querySelector('.fab-item[data-act="locate"]').click(); await wait(80);
-  const located = ta.value; const mk = U.extractMarked(located);
-  out.checks.push({ t: 'locate', hasOpen: located.indexOf(U.MARK_OPEN) >= 0, hasClose: located.indexOf(U.MARK_CLOSE) >= 0,
-    strippedEquals: U.stripMarkers(located) === clean, text: mk ? mk.text : null, base: mk ? mk.base : null,
-    offsets: mk ? [mk.start, mk.end] : null });
-
-  // === C: 字数基于去标记正文（含标记时仍显示 5 字）===
-  ta.value = U.markSelection(clean, 1, 3); ta.dispatchEvent(new Event('input')); await wait(30);
-  const wcTxt = document.querySelector('#wc').textContent;
-  out.checks.push({ t: 'wc-stripped', wcTxt, expect: db.countWords(clean) + ' 字', ok: wcTxt === (db.countWords(clean) + ' 字') });
-
-  // === D: 选中全文包裹整篇 ===
-  ta.value = clean; ta.dispatchEvent(new Event('input')); await wait(20);
-  document.querySelector('.fab-item[data-act="all"]').click(); await wait(80);
-  const allMk = U.extractMarked(ta.value);
-  out.checks.push({ t: 'select-all', wrapHead: ta.value.charAt(0) === U.MARK_OPEN,
-    wrapTail: ta.value.charAt(ta.value.length - 1) === U.MARK_CLOSE, text: allMk ? allMk.text : null });
-
-  // === E: 未配置时点 AI 动作 → 预览不出现（结果不串台/不产 mock）===
-  ta.value = clean; ta.dispatchEvent(new Event('input')); await wait(20);
-  if (typeof A._runAction === 'function') { A._runAction({ kind: 'polish', name: '润色', instruction: 'x' }); await wait(120); }
-  const curApi = await db.getSetting('api');
-  out.checks.push({ t: 'blocked-noconfig', provider: curApi && curApi.provider, pvHidden: document.querySelector('#pv').hidden });
-
-  // === F: FAB 组成 ===
-  const kinds = [].map.call(document.querySelectorAll('.fab-item[data-kind]'), b => b.getAttribute('data-kind'));
-  out.checks.push({ t: 'fab', toolCount: document.querySelectorAll('.fab-item[data-act]').length,
-    kindCount: kinds.length, hasQuery: !!document.querySelector('.fab-item[data-act="query"]'),
-    noDialogueQuick: kinds.indexOf('dialogue') < 0 });
-
-  // === G/H: “我的”密钥掩码框 + Provider 下拉 ===
-  A.go('#/me'); await wait(700);
-  const keyEl = document.querySelector('#key'); const cs = keyEl ? getComputedStyle(keyEl) : null;
-  const provOpts = [].map.call(document.querySelectorAll('#prov option'), o => o.value);
-  out.checks.push({ t: 'key-mask', type: keyEl ? keyEl.type : null, masked: keyEl ? keyEl.classList.contains('masked') : false,
-    textSecurity: cs ? (cs.webkitTextSecurity || cs.getPropertyValue('-webkit-text-security')) : null });
-  out.checks.push({ t: 'prov-options', hasMock: provOpts.indexOf('mock') >= 0, hasPlaceholder: provOpts.indexOf('') >= 0 });
-
-  await db.deleteChapter(chapId); // 级联删节
-  return JSON.stringify(out);
-})()`;
-
-(async () => {
-  const targets = await (await fetch(BASE + '/json')).json();
+async function main() {
+  const res = await fetch(BASE + '/json');
+  const targets = await res.json();
   const page = targets.find(t => t.type === 'page' && t.webSocketDebuggerUrl);
-  if (!page) { console.log('NO_PAGE_TARGET'); return; }
+  if (!page) { console.log('NO_PAGE_TARGET', JSON.stringify(targets)); return; }
+
   const ws = new WebSocket(page.webSocketDebuggerUrl);
-  let id = 0; const pend = new Map();
-  const send = (m, p) => new Promise((res, rej) => { const i = ++id; pend.set(i, { res, rej }); ws.send(JSON.stringify({ id: i, method: m, params: p || {} })); });
-  ws.onmessage = ev => { const msg = JSON.parse(ev.data); if (msg.id && pend.has(msg.id)) { const p = pend.get(msg.id); pend.delete(msg.id); msg.error ? p.rej(new Error(JSON.stringify(msg.error))) : p.res(msg.result); } };
-  await new Promise(r => ws.addEventListener('open', r));
-  const r = await send('Runtime.evaluate', { expression: EXPR, awaitPromise: true, returnByValue: true });
-  const val = r && r.result && r.result.value;
-  if (!val) { console.log('EVAL_FAIL', JSON.stringify(r)); ws.close(); return; }
-  const parsed = JSON.parse(val);
-  console.log('errs:', JSON.stringify(parsed.errs));
-  parsed.checks.forEach(c => console.log(JSON.stringify(c)));
+  let id = 0;
+  const pending = new Map();
+  function send(method, params) {
+    return new Promise((resolve, reject) => {
+      const mid = ++id;
+      pending.set(mid, { resolve, reject });
+      ws.send(JSON.stringify({ id: mid, method, params: params || {} }));
+    });
+  }
+  ws.addEventListener('message', (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.id && pending.has(msg.id)) {
+      const p = pending.get(msg.id); pending.delete(msg.id);
+      if (msg.error) p.reject(new Error(JSON.stringify(msg.error))); else p.resolve(msg.result);
+    }
+  });
+  await new Promise((ok, err) => { ws.addEventListener('open', ok); ws.addEventListener('error', err); });
+
+  async function evaluate(expr) {
+    const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true });
+    if (r.exceptionDetails) return 'EXC: ' + JSON.stringify(r.exceptionDetails.exception || r.exceptionDetails.text);
+    return r.result ? r.result.value : r;
+  }
+
+  console.log('=== NOVEL_BOOT.report ===');
+  console.log(await evaluate("JSON.stringify(window.NOVEL_BOOT&&NOVEL_BOOT.report||'NO NOVEL_BOOT')"));
+
+  console.log('=== db info (期望 fromVersion<=7, toVersion=7) ===');
+  console.log(await evaluate("(function(){try{var i=window.NOVEL_DB&&NOVEL_DB.info&&NOVEL_DB.info();return JSON.stringify(i||'NO info')}catch(e){return 'ERR '+e}})()"));
+
+  console.log('=== 新模块加载面 ===');
+  console.log(await evaluate("(function(){var T=window.NOVEL_TEXT_NORM,U=window.NOVEL_UNDO,D=window.NOVEL_DOCX,Z=window.NOVEL_ZIP,DA=window.NOVEL_DATA_ACTIONS,UU=window.NOVEL_UTIL;return JSON.stringify({textnorm:!!(T&&T.normalize),mapToClean:!!(UU&&UU.mapToClean),undo:!!(U&&U.create),extractText:!!(D&&D.extractText),readDocument:!!(DA&&DA.readDocument),listAsync:!!(Z&&Z.listAsync)})})()"));
+
+  console.log('=== DecompressionStream deflate-raw 支持（真机 docx 前提） ===');
+  console.log(await evaluate("(function(){try{if(typeof DecompressionStream==='undefined')return 'ABSENT';var ds=new DecompressionStream('deflate-raw');return 'OK deflate-raw'}catch(e){return 'FAIL '+e}})()"));
+
+  // 只读验证：列存在性经 info()=v7 已证；这里取已有角色看 gender/age 字段是否随迁移读出（不插任何数据）
+  console.log('=== characters gender/age 只读回检 ===');
+  console.log(await evaluate("(async function(){try{var b=await window.NOVEL_DB.listBooks();if(!b.length)return 'NO_BOOKS(跳过)';var c=await window.NOVEL_DB.listCharacters(b[0].id);return JSON.stringify({books:b.length,chars:c.length,hasFields:c.length?(('gender' in c[0])&&('age' in c[0])):'(首书无人物,迁移由 toVersion=7 佐证)'})}catch(e){return 'ERR '+e}})()"));
+
   ws.close();
-})().catch(e => console.error('PROBE_ERR', e.message));
+}
+main().catch(e => { console.log('FATAL', e && e.stack || e); process.exit(1); });
