@@ -1,5 +1,13 @@
 apply plugin: 'com.android.application'
 
+// Release signing: credentials live OUTSIDE the repo in novel-ai-tool/signing/keystore.properties
+// (gitignored together with the keystore). Absent file -> release stays unsigned, debug untouched.
+def keystorePropsFile = new File(rootProject.projectDir, '../signing/keystore.properties')
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { keystoreProps.load(it) }
+}
+
 android {
     namespace = "com.novelai.writer"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,10 +24,25 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (keystorePropsFile.exists()) {
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+                storeFile new File(rootProject.projectDir, keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (keystorePropsFile.exists()) {
+                signingConfig signingConfigs.release
+            } else {
+                logger.lifecycle('keystore.properties not found: release APK will be UNSIGNED')
+            }
         }
     }
 }
