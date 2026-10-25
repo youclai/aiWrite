@@ -15,3 +15,14 @@ novel-ai-tool/backups/
 *.sqlite
 *.db
 __pycache__/
+
+# 测试产物：真机截图 / 构建日志 / 报告输出 / 探针落盘结果（均由脚本可随时重生成，不入库）
+novel-ai-tool/tests/*.png
+novel-ai-tool/tests/*.log
+novel-ai-tool/tests/report-*.txt
+novel-ai-tool/tests/probe-*.txt
+novel-ai-tool/tests/build-*.txt
+novel-ai-tool/tests/logcat-*.txt
+novel-ai-tool/tests/regress-*.txt
+novel-ai-tool/tests/app-files.txt
+novel-ai-tool/tests/back-result.txt
