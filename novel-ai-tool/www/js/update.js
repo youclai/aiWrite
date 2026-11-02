@@ -152,8 +152,17 @@
         ? Object.assign({ status: 'update' }, pack)
         : Object.assign({ status: 'latest' }, pack);
     }, function (e) {   // 网络失败/超时/非 200：静默降级，不打扰用户
-      return { status: 'error', why: String((e && e.message) || e), localVersion: local };
+      return { status: 'error', why: humanizeError(e), localVersion: local };
     });
+  }
+
+  // 把技术错误转成人话（手动检查的 toast 直接用它，用户不该看到 HTTP 状态码）：
+  // 404 = 仓库尚无 Release（未发布/已改名/被转私有）；403/451 = 仓库不可访问；其余保留原文便于反馈排障。
+  function humanizeError(e) {
+    var msg = String((e && e.message) || e || '');
+    if (/404/.test(msg)) return '发布仓库暂无已发布版本';
+    if (/403|451/.test(msg)) return '发布仓库不可访问';
+    return msg || '网络不可用';
   }
 
   // 启动检查：fire-and-forget，只有确认有新版本才弹层提醒，其余一律无声。

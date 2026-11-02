@@ -133,6 +133,14 @@ const REL = (tag, extra) => Object.assign({
   harness({ fetchJson: () => Promise.reject(new Error('请求超时')) });
   await UP.manualCheck();
   eq('失败 toast 不静默', [toastCalls.length, toastCalls[0].kind, toastCalls[0].msg.includes('请求超时')], [1, 'bad', true]);
+  // 仓库尚无 Release（releases/latest 固定 404）：对用户报人话，不透出 HTTP 状态码
+  harness({ fetchJson: () => Promise.reject(new Error('HTTP 404')) });
+  r = await UP.manualCheck();
+  eq('404 映射为人话', [r.why, toastCalls[0].msg], ['发布仓库暂无已发布版本', '检查失败：发布仓库暂无已发布版本，请稍后重试']);
+  eq('404 不泄漏状态码', toastCalls[0].msg.includes('404'), false);
+  harness({ fetchJson: () => Promise.reject(new Error('HTTP 403')) });
+  r = await UP.checkOnBoot();
+  eq('403 映射为仓库不可访问', r.why, '发布仓库不可访问');
 
   /* ---------- 配置缺失：skip 不发请求 ---------- */
   log('== 无配置降级 ==');
