@@ -29,14 +29,21 @@
     } catch (e) { App().toast('复制失败', 'bad'); }
   }
 
-  // 拉起外部链接：原生壳下 Capacitor 把 window.open 转成系统 Intent 拉起外部浏览器（通常返回 null，不能据此判失败）；
-  // 纯 Web 环境（浏览器预览/探针）才按返回值判被拦。失败必须给明确 toast，不得静默。（G1 更新弹窗复用此口径）
+  // 拉起外部链接。两条链路按环境分流（11/02 Magic7 真机实测修正）：
+  // · 原生壳：用 location.href 导航外部 URL——WebView 导航管线必过 Capacitor shouldOverrideUrlLoading，
+  //   由 Bridge.launchIntent 派发 ACTION_VIEW 拉起外部浏览器；window.open 在该机 WebView(v150) 被
+  //   弹窗拦截器静默拦（真触摸也无 Intent），赞助页旧链路同样受影响，故两处统一收敛到此。
+  // · 纯 Web（浏览器预览/探针）：window.open 新窗口；返回 null 才判被拦，必须给 toast 不静默。
   function openExternal(url) {
     if (!url) { App().toast('链接不可用，请稍后重试', 'bad'); return; }
+    var native = root.Capacitor && root.Capacitor.isNativePlatform && root.Capacitor.isNativePlatform();
+    if (native) {
+      try { root.location.href = url; } catch (e) { App().toast('拉起失败，请复制链接在浏览器中访问', 'bad'); }
+      return;
+    }
     var w = null;
     try { w = root.open(url, '_blank'); } catch (e) { w = null; }
-    var native = root.Capacitor && root.Capacitor.isNativePlatform && root.Capacitor.isNativePlatform();
-    if (!native && !w) App().toast('打开失败，请复制上方链接在浏览器中访问', 'bad');
+    if (!w) App().toast('打开失败，请复制上方链接在浏览器中访问', 'bad');
   }
 
   var BUILTIN = [
@@ -1291,9 +1298,9 @@
       + '<p>最新版本：' + esc(norm(info.remoteVersion)) + '</p>'
       + '<h3>更新内容</h3><div class="upd-chg">' + (esc(info.changelog || '') || '（详见发布页）') + '</div>'
       + (dlHtml ? '<h3>下载方式</h3>' + dlHtml : '')
-      + '<div class="hint">点“立即更新”在外部浏览器打开下载页，应用内不直接下载安装。</div></div>'
+      + '<div class="hint">网盘链接复制后在浏览器打开下载；点“Gitee 附件”直接跳转下载页，应用内不下载不安装。</div></div>'
       + '<div class="row"><button class="ghost" id="updSnooze">' + days + '天内不提醒</button>'
-      + '<button class="primary" id="updGo">立即更新</button></div>');
+      + '<button class="primary" data-closesheet>知道了</button></div>');
     on(panel.querySelector('#updBaidu'), 'click', function () { copyText(baiduText); });
     on(panel.querySelector('#updQuark'), 'click', function () { copyText(quarkText); });
     on(panel.querySelector('#updAsset'), 'click', function () { openExternal(info.assetUrl || info.releaseUrl); });
@@ -1302,8 +1309,7 @@
       closeSheet('updateSheet');
       App().toast(days + '天内不再提醒', 'ok');
     });
-    // 主按钮不改“冷却”语义：只拉起外部下载页，弹层保持打开，用户可自行关闭
-    on(panel.querySelector('#updGo'), 'click', function () { openExternal(info.assetUrl || info.releaseUrl); });
+    // 「立即更新」按钮已去掉（11/02 用户反馈）：应用内不做跳转下载，三渠道按钮即全部动作
   }
 
   function me(p) {
@@ -1908,14 +1914,9 @@
       + '<div class="hint">本应用完全免费，赞助不包含任何功能、权益或交付物。</div>'
       + '</div>';
     on(q('#spCopy'), 'click', function () { copyText(SPONSOR_URL); });
-    on(q('#spOpen'), 'click', function () {
-      // 原生壳下 Capacitor 桥接层会把 window.open 转成系统 Intent 拉起外部浏览器（通常返回 null），不能据此判失败；
-      // 纯 Web 环境（浏览器预览/探针）才按返回值判弹窗被拦。失败必须给明确 toast，不得静默。
-      var w = null;
-      try { w = root.open(SPONSOR_URL, '_blank'); } catch (e) { w = null; }
-      var native = root.Capacitor && root.Capacitor.isNativePlatform && root.Capacitor.isNativePlatform();
-      if (!native && !w) App().toast('跳转失败，请用上方“复制赞助链接”在浏览器打开', 'bad');
-    });
+    // 统一走 openExternal（原生壳 location.href 导航→Capacitor 派发 Intent；旧 window.open 链路
+    // 在 Magic7 WebView v150 被弹窗拦截静默失效，11/02 真机实测后切换，口径与更新弹窗一致）
+    on(q('#spOpen'), 'click', function () { openExternal(SPONSOR_URL); });
     on(q('#qrImg'), 'click', function () { if (SPONSOR_QR_READY) openSponsorQrSheet(); });
     // 防御兜底：开关为 true 但图实际缺失/加载失败时，同尺寸切占位，版面不塌
     var qrEl = q('#qrImg');
