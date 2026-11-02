@@ -7,10 +7,14 @@ const fs = require('fs');
 const path = require('path');
 const BASE = process.env.DEV_BASE || 'http://127.0.0.1:9222';
 const DIR = 'd:/xh/C-新书/C-第01章-童年的那顿饭';
-const FILES = {
-  2: 'C-第01章-第02节-东西是村长分的.txt', 3: 'C-第01章-第03节-孩子进教堂.txt',
-  4: 'C-第01章-第04节-门被砸.txt', 5: 'C-第01章-第05节-门开了.txt', 6: 'C-第01章-第06节-第二天天一亮.txt'
-};
+// 动态扫描目录（排除第1节），所以以后新增节不用改本脚本
+const FILES = {};
+fs.readdirSync(DIR)
+  .filter(n => /^C-第01章-第\d+节-.*\.txt$/.test(n))
+  .map(n => ({ n, idx: parseInt(n.match(/^C-第01章-第(\d+)节/)[1], 10) }))
+  .filter(f => f.idx > 1)
+  .forEach(f => { FILES[f.idx] = f.n; });
+const IDX_LIST = Object.keys(FILES).map(Number).sort((a, b) => a - b);
 function loadBody(name) {
   const lines = fs.readFileSync(path.join(DIR, name), 'utf8').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').split('\n');
   let k = 0;
@@ -61,11 +65,11 @@ const EXPR = `(async () => {
   };
   eq('第1节封条 len', d.guard1.len, 1997);
   eq('第1节封条 updated_at', d.guard1.updated_at, 1792782391178);
-  for (const i of ['2', '3', '4', '5', '6']) {
+  for (const i of IDX_LIST.map(String)) {
     eq(`第${i}节正文逐字一致`, d.secs[i] && d.secs[i].len === FILE_BODY[i].length
       && d.secs[i].head === FILE_BODY[i].slice(0, 24), true);
   }
-  eq('节数', Object.keys(d.secs).length, 6);
+  eq('节数', Object.keys(d.secs).length, IDX_LIST.length + 1);
   eq('人物卡数', d.characters.length, 9);
   eq('势力数', d.factions.length, 3);
   eq('人物卡字段齐全', d.characters.every(c => c.role && c.age && c.person && c.speech && c.taboo && c.bg && c.aliasOk), true);

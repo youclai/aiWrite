@@ -53,7 +53,7 @@ const EXPR = `(async () => {
     await snap('clickVbtn#' + i + ':' + label);
   }
 
-  // 4) 我的 → 4 个 vbtn
+  // 4) 我的 → 逐个 vbtn（数量随 ME_TABS 演进，现为 7 个：含 10/29 新增的「赞助」；脚本动态遍历，不写死断言）
   A.go('#/me'); await new Promise(r=>setTimeout(r,350));
   await snap('enterMeDefault');
   const meNavs = document.querySelectorAll('.vnav [data-me-nav]');

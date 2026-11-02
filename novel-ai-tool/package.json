@@ -1,8 +1,8 @@
 {
   "name": "novel-ai-writer",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "安卓本地 AI 写作助手（Capacitor 单 APK，数据不出机）",
+  "description": "安卓本地 AI 写作工具「AI写」（Capacitor 单 APK，数据不出机）",
   "scripts": {
     "sync": "cap sync android",
     "build": "cap sync android && cd android && gradlew.bat assembleDebug",

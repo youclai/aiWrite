@@ -29,6 +29,16 @@
     } catch (e) { App().toast('复制失败', 'bad'); }
   }
 
+  // 拉起外部链接：原生壳下 Capacitor 把 window.open 转成系统 Intent 拉起外部浏览器（通常返回 null，不能据此判失败）；
+  // 纯 Web 环境（浏览器预览/探针）才按返回值判被拦。失败必须给明确 toast，不得静默。（G1 更新弹窗复用此口径）
+  function openExternal(url) {
+    if (!url) { App().toast('链接不可用，请稍后重试', 'bad'); return; }
+    var w = null;
+    try { w = root.open(url, '_blank'); } catch (e) { w = null; }
+    var native = root.Capacitor && root.Capacitor.isNativePlatform && root.Capacitor.isNativePlatform();
+    if (!native && !w) App().toast('打开失败，请复制上方链接在浏览器中访问', 'bad');
+  }
+
   var BUILTIN = [
     { kind: 'polish', name: '润色', instruction: '在保持原意、人称与专有名词的前提下，让文字更凝练、更有画面感。只输出润色后的正文（将整体替换所选），不要复述原文、不解释、不加标题。' },
     { kind: 'expand', name: '扩写', instruction: '在不改变剧情的前提下，扩写动作、感官与心理细节，篇幅约为原文的 1.5–2 倍。只输出扩写后的正文（将整体替换所选），不要附写作说明。' },
@@ -36,10 +46,13 @@
     { kind: 'dialogue', name: '转对话', instruction: '把叙述改写为人物对话，突出各自语气与潜台词，不要添加旁白解释。只输出改写后的对话正文（将整体替换所选）。' },
     { kind: 'continue', name: '续写', instruction: '紧接选段结尾自然续写，保持文风、人称与人设一致。只输出新续写的正文，切勿重复选段里已有的文字，不总结、不预告后事。' }
   ];
+  // AI摘要（待办 5b）：不走采纳替换正文，结果写回章/节的 summary 字段
+  var SUMMARY_TPL = { kind: 'summary', name: 'AI摘要',
+    instruction: '通读全文，用不超过 150 字概括本章/本节的关键情节、人物关系变化与伏笔动向，供后续写作做前情衔接。只输出摘要文本本身，不加标题、解释或任何前后缀。' };
 
   function head(title, backHash, rightSlotHtml) {
     return '<header class="bar">'
-      + (backHash ? '<button class="back" data-back="' + esc(backHash) + '">‹ 返回</button>' : '<span class="brand">AI 写作助手</span>')
+      + (backHash ? '<button class="back" data-back="' + esc(backHash) + '">‹ 返回</button>' : '<span class="brand">AI写</span>')
       + '<h1 class="htitle">' + esc(title) + '</h1><span class="sp"></span>' + (rightSlotHtml || '') + '</header>';
   }
   // 全局返回：[data-back] 与系统返回键共用 App().navigateUp() 单一入口（行为严格一致）；
@@ -557,6 +570,39 @@
     };
   }
 
+  // 前情摘要查找（待办 5c）：节级取同章上一节，无上一节（第一节）则取上一章最后一节；章级取同书 idx-1 章。
+  // 找不到任何源时返回空串，由 prompt.js 落“未提供”占位。
+  function prevSummaryFor(store, ch) {
+    if (store.mode === 'section') {
+      return DB.listSections(ch.chapter_id).then(function (secs) {
+        for (var i = 0; i < secs.length; i++) {
+          if (String(secs[i].id) === String(store.docId)) return secs[i > 0 ? i - 1 : i].summary || '';
+        }
+        return '';
+      }).then(function (s) {
+        if (s) return s;
+        return DB.listChapters(ch.book_id).then(function (chs) {
+          for (var i = 0; i < chs.length; i++) {
+            if (String(chs[i].id) === String(ch.chapter_id)) {
+              var prevCh = i > 0 ? chs[i - 1] : null;
+              if (!prevCh) return '';
+              return DB.listSections(prevCh.id).then(function (ps) {
+                return (ps.length ? (ps[ps.length - 1].summary || '') : (prevCh.summary || ''));
+              });
+            }
+          }
+          return '';
+        });
+      });
+    }
+    return DB.listChapters(ch.book_id).then(function (chs) {
+      for (var i = 0; i < chs.length; i++) {
+        if (String(chs[i].id) === String(store.docId)) return i > 0 ? (chs[i - 1].summary || '') : '';
+      }
+      return '';
+    });
+  }
+
   function writer(mode, p) {
     var store = makeStore(mode, p);
     var U = root.NOVEL_UTIL;
@@ -564,9 +610,9 @@
       if (!ch) { screen().innerHTML = head('编辑器') + '<div class="err">内容不存在或已被删除（F11）。请返回重进。</div>'; wireBack(); return; }
       var bookId = store.bookIdOf(ch);
       App().state.bookId = bookId; App().state.chapterId = store.mode === 'chapter' ? store.docId : ch.chapter_id;
-      return Promise.all([ findBook(bookId), DB.listCharacters(bookId), DB.getSetting('api'), DB.getSetting('ai_context') ])
+      return Promise.all([ findBook(bookId), DB.listCharacters(bookId), DB.getSetting('api'), DB.getSetting('ai_context'), prevSummaryFor(store, ch) ])
         .then(function (rs) {
-        var book = rs[0], characters = rs[1], api = rs[2], ctx = rs[3];
+        var book = rs[0], characters = rs[1], api = rs[2], ctx = rs[3], prevSum = rs[4];
 
         var html = head(store.label, store.backHash(), peekRight(bookId)) + '<div class="body editor">'
           // 顶栏（建议 3）：标题不再无限拉伸；字数·保存态·版本包成 .chbar-meta 元信息组，紧跟标题左对齐起排
@@ -588,6 +634,7 @@
           + '</div>'
           + '<div class="ai-pop" id="aiPop">'
           + BUILTIN.filter(function (b) { return b.kind !== 'dialogue'; }).map(function (b) { return '<button class="fab-item" data-kind="' + b.kind + '">' + b.name + '</button>'; }).join('')
+          + '<button class="fab-item ai" data-act="summary">摘要</button>'
           + '<button class="fab-item tool" data-act="query">AI查找</button>'
           + '</div>'
           + '<button class="fab-main" id="fabBtn">工具</button></div>'
@@ -748,6 +795,7 @@
 
           var args = {
             book: book || { id: bookId }, chapter: ch, characters: characters, settings: ctx,
+            prevSummary: prevSum,   // 前情摘要接线（待办 5c）：session 已透传 prompt.build，开关打开时无则“未提供”
             api: api, template: tpl,
             userHint: String(userHint || '').slice(0, 500),
             selection: { start: sel.start, end: sel.end, text: v.slice(sel.start, sel.end) },
@@ -810,6 +858,87 @@
             var h = String(panel.querySelector('#hintTa').value || '').trim().slice(0, 500);
             closeSheet('hintSheet');
             runAction(tpl, h);
+          });
+        }
+
+        // ---- AI摘要（待办 5b）：整章/整节全文生成 → 写回 summary；弹窗可编辑/重新生成/保存 ----
+        function genSummary(fullText, cb) {
+          if (running) { App().toast('上一条还在进行…'); return; }
+          var rd = App().apiReady(api);
+          if (!rd.ok) { App().toast(rd.why, 'warn'); return; }
+          pv.hidden = false; pvBody.textContent = '';
+          pvTitle.textContent = 'AI摘要 · 生成中…'; pvFoot.innerHTML = '<button class="ghost" data-stop>■ 停止</button>';
+          pvMeta.textContent = '';
+          var t0 = Date.now();
+          var n = fullText.length;
+          var args = {
+            book: book || { id: bookId }, chapter: ch, characters: characters, settings: ctx, prevSummary: prevSum,
+            api: api, template: SUMMARY_TPL,
+            selection: { start: 0, end: n, text: fullText }, before: '', after: '',
+            onDelta: function (txt, full) { pvBody.textContent = full; }
+          };
+          running = true;
+          var call = root.NOVEL_SESSION.executeAction(App().deps(), args);
+          var stopBtn = q('#pvFoot [data-stop]');
+          on(stopBtn, 'click', function () { if (call && call.cancel) { call.cancel(); if (stopBtn) stopBtn.disabled = true, stopBtn.textContent = '停止中…'; } });
+          Promise.resolve(call).then(function (res) {
+            running = null;
+            if (!res || !res.ok) {
+              pvTitle.textContent = 'AI摘要 · 失败'; pvBody.textContent = ''; pvMeta.textContent = (res && res.reason) || '未知错误';
+              pvFoot.innerHTML = '<button data-close>关闭</button>';
+              on(q('#pvFoot [data-close]'), 'click', closePreview);
+              cb(null);
+              return;
+            }
+            pvTitle.textContent = 'AI摘要 · 完成（' + (((Date.now() - t0) / 1000).toFixed(1)) + 's）';
+            cb(res.cleaned || '');
+          }, function (e) {
+            running = null; pvTitle.textContent = 'AI摘要 · 异常'; pvBody.textContent = ''; pvMeta.textContent = (e && e.message) || e;
+            pvFoot.innerHTML = '<button data-close>关闭</button>';
+            on(q('#pvFoot [data-close]'), 'click', closePreview);
+            cb(null);
+          });
+        }
+        // 摘要弹窗：已存摘要直接可编辑；“重新生成”走流式（期间面板内提示，完成后回填可编辑区）
+        function openSummarySheet() {
+          var panel = openSheet('summarySheet', '<div class="sh-title">摘要（' + (store.mode === 'section' ? '本节' : '本章') + '）</div>'
+            + '<div class="fld"><textarea id="sumTa" rows="5" placeholder="还没有摘要，可点“重新生成”或手写后保存"></textarea></div>'
+            + '<div class="hint">摘要会保存到章/节的 summary 字段；开启“注入章节摘要/前情摘要”后自动带入提示词。</div>'
+            + '<div class="row"><button class="primary" data-sumsave>保存</button><button data-sumgen>重新生成</button><button class="ghost" data-closesheet>关闭</button></div>');
+          var ta3 = panel.querySelector('#sumTa');
+          ta3.value = ch.summary || '';
+          function setBusy(onBusy) {
+            ta3.readOnly = onBusy;
+            panel.querySelector('[data-sumgen]').disabled = onBusy;
+          }
+          function runGen() {
+            if (running) { App().toast('上一条还在进行…'); return; }
+            commit();
+            setBusy(true);
+            ta3.value = '';
+            ta3.placeholder = '正在生成摘要…（进度见预览条）';
+            store.load().then(function (fresh) {
+              var t = U.stripMarkers((fresh && fresh.body) || '');
+              if (!t) { setBusy(false); ta3.placeholder = '正文为空，无内容可总结'; return; }
+              genSummary(t, function (out) {
+                setBusy(false);
+                ta3.placeholder = '还没有摘要，可点“重新生成”或手写后保存';
+                if (out == null) { App().toast('生成失败，可在上方预览区查看详情', 'bad'); return; }
+                if (!out) { App().toast('AI 未返回可用摘要', 'warn'); return; }
+                ta3.value = out;
+              });
+            });
+          }
+          on(panel.querySelector('[data-sumgen]'), 'click', runGen);
+          // 无摘要时打开即直接生成（待办 5b）；已存则仅展示可编辑
+          if (!String(ch.summary || '').trim()) runGen();
+          on(panel.querySelector('[data-sumsave]'), 'click', function () {
+            var v = String(ta3.value || '').trim();
+            store.saveMeta({ summary: v }).then(function () {
+              ch.summary = v;
+              closeSheet('summarySheet');
+              App().toast(v ? '摘要已保存' : '摘要已清空', 'ok');
+            }, function (e) { App().toast('保存失败：' + (e.message || e), 'bad'); });
           });
         }
 
@@ -973,6 +1102,7 @@
             if (act === 'locate') doLocate(false);
             else if (act === 'all') doLocate(true);
             else if (act === 'query') openQuery();
+            else if (act === 'summary') openSummarySheet();
             else if (act === 'normalize') doNormalize();
             else if (act === 'undo') doUndo();
             else if (act === 'redo') doRedo();
@@ -1061,7 +1191,7 @@
         + sw('use_summary', '注入章节摘要', '把本章已有摘要带进提示词')
         + sw('inject_prev_summary', '注入前情摘要', '带上一章摘要做衔接')
         + sw('inject_taboos', '注入人物人生走向', '按命中人物卡补充设定')
-        + '<div class="fld"><label>Token 预算</label><input id="bkBudget" type="number" value="' + (ctx.token_budget || 6000) + '"><div class="hint">超出按“作品设定→本章摘要→角色卡→前文→后文”五级裁剪，选段与指令永不裁</div></div>'
+        // Token 预算不再展示（10/26 待办）：仅隐入 UI，后台仍沿用已存值与默认 6000，五级裁剪行为不变
         + '<div class="row"><button class="primary" id="saveBk">保存</button>'
         + '<button id="dryRun">试运行(拼装提示词，不联网)</button></div>'
         + '<pre class="dryout" id="dryOut" hidden></pre></div>';
@@ -1072,7 +1202,7 @@
               use_summary: bq('[data-ck="use_summary"]').checked,
               inject_prev_summary: bq('[data-ck="inject_prev_summary"]').checked,
               inject_taboos: bq('[data-ck="inject_taboos"]').checked,
-              token_budget: parseInt(bq('#bkBudget').value, 10) || 6000
+              token_budget: ctx.token_budget || 6000
             });
             next.auto_adopt = false;
             return DB.setSetting('ai_context', next);
@@ -1096,18 +1226,24 @@
     });
   }
 
-  /* ================= 我的 F50：竖向页签（AI助手 / 存储 / 界面设置 / 导入书籍 / 数据与安全 / 问题反馈） ================= */
+  /* ================= 我的 F50：竖向页签（AI助手 / 存储 / 界面设置 / 导入书籍 / 数据与安全 / 问题反馈 / 赞助） ================= */
   var ME_TABS = [
     { key: 'ai', label: 'AI 助手' },
     { key: 'storage', label: '存储' },
     { key: 'appearance', label: '界面设置' },
     { key: 'import', label: '导入书籍' },
     { key: 'data', label: '数据与安全' },
-    { key: 'feedback', label: '问题反馈' }
+    { key: 'feedback', label: '问题反馈' },
+    { key: 'sponsor', label: '赞助' }
   ];
   // 反馈与说明（建议 8）：邮箱唯一常量，反馈页与用户说明弹层共用，避免两处口径不一
   var FEEDBACK_EMAIL = '3620522389@qq.com';
-  var APP_VERSION = 'v3.22';
+  // 赞助（待办 10/29）：爱发电主页与二维码同样收敛到单点维护；链接不带分享渠道参数，避免用户复制到无关追踪串
+  var SPONSOR_URL = 'https://afdian.com/a/aiWiC';
+  var SPONSOR_QR = 'img/sponsor/afdian.png';
+  var SPONSOR_QR_READY = true;   // 素材已就位；换图只需覆盖该 png 路径，图缺失时自动走占位分支
+  // 本地版本号单点来自 index.html 注入的 window.APP_VERSION（发布时三处同步），界面展示与 G1 比对共用同一基准
+  var APP_VERSION = 'v' + String(root.APP_VERSION || '1.0').replace(/^v/i, '');
 
   // 用户说明弹层（常驻“我的”底部居中入口）：隐私免责 + 提交规则 + 版本版权
   function openUserDoc() {
@@ -1118,12 +1254,56 @@
       + '<p>· API Key 经 Android Keystore（AES-GCM）加密保存，绝不明文进入数据库、备份包或日志。</p>'
       + '<p>· 备份包不含密钥；派生产物只落在私有目录 temp/ 内，可在“存储”页一键清理。</p>'
       + '<p>· 使用 AI 功能时，仅把拼装后的提示词（含选段与必要上下文）发送给您自行配置的服务商；未配置时不会发出任何网络请求。</p>'
+      + '<p>· <strong>版本检查：应用启动时可能访问 Gitee（gitee.com）查询最新版本，仅传输当前版本号做比对，不采集设备信息或作品数据，网络不可用时自动跳过。</strong></p>'
+      + '<h3>版本检查与更新</h3>'
+      + '<p>· 应用启动时会访问 Gitee（gitee.com）查询最新 Release 版本，仅传输当前版本号与远程版本号比对，不采集任何设备信息、作品数据或用户行为。</p>'
+      + '<p>· 版本检查请求为只读 GET 请求，不会向服务器写入任何数据。</p>'
+      + '<p>· 若网络不可用，检查自动跳过，不影响应用正常使用。</p>'
+      + '<p>· 您可通过「' + ((root.UPDATE_CONFIG && root.UPDATE_CONFIG.snoozeDays) || 14) + '天内不提醒」按钮暂停更新提示，该设置仅保存在本机；「我的」页底部“检查更新”可随时手动触发。</p>'
+      + '<p>· 更新包下载经您自行选择的网盘或 Gitee 附件在外部浏览器完成，应用内不下载、不安装任何文件。</p>'
       + '<h3>问题反馈与提交规则</h3>'
       + '<p>· 建议与 bug 请发送至 ' + FEEDBACK_EMAIL + '，请附上版本号与复现步骤。</p>'
       + '<p>· 邮箱为唯一反馈渠道，响应不作时效承诺；不接收与写作无关的商业信息。</p>'
       + '<h3>其他</h3>'
       + '<p>· AI 生成内容仅供参考，发布前请自行审校与合规检查。</p>'
-      + '<div class="doc-foot">当前版本 ' + APP_VERSION + ' · © 2026 AI 写作助手</div></div>');
+      + '<p>· 本应用不收取任何费用；「赞助」页跳转的第三方平台由该平台提供服务，本应用不采集、不接触任何支付信息。</p>'
+      + '<div class="doc-foot">当前版本 ' + APP_VERSION + ' · © 2026 AI写</div></div>');
+  }
+
+  /* ---- 更新提醒弹层（G1）：复用通用 .sheet（真机严禁原生弹窗）；pack 来自 NOVEL_UPDATE.checkUpdate，
+     结构 { status, localVersion, info:{remoteVersion, changelog, assetUrl, releaseUrl...}, config }；
+     网盘链接只在面板内展成“点击复制”，应用内不下载不安装。 ---- */
+  function showUpdateDialog(pack) {
+    pack = pack || {};
+    var info = pack.info || {}, cfg = pack.config || root.UPDATE_CONFIG || {};
+    var norm = function (v) { return 'v' + String(v || '').replace(/^v/i, ''); };
+    var baidu = cfg.baidu || {}, quark = cfg.quark || {};
+    // 复制内容拼成人类可读整段（链接 + 提取码/口令），拿去即可用，不需来回切页补码
+    var baiduText = baidu.link ? baidu.link + (baidu.extractCode ? ' 提取码 ' + baidu.extractCode : '') : '';
+    var quarkText = quark.link ? quark.link + (quark.shareText ? ' ' + quark.shareText : '') : '';
+    var days = cfg.snoozeDays || 14;
+    var dlHtml = '';
+    if (baiduText) dlHtml += '<div class="row"><button id="updBaidu">📱 百度网盘（点击复制）</button></div>';
+    if (quarkText) dlHtml += '<div class="row"><button id="updQuark">☁️ 夸克网盘（点击复制）</button></div>';
+    if (info.assetUrl) dlHtml += '<div class="row"><button id="updAsset">📦 Gitee 附件（直接下载）</button></div>';
+    var panel = openSheet('updateSheet', '<div class="sh-title">🎉 发现新版本</div><div class="doc">'
+      + '<p>当前版本：' + esc(norm(pack.localVersion)) + '</p>'
+      + '<p>最新版本：' + esc(norm(info.remoteVersion)) + '</p>'
+      + '<h3>更新内容</h3><div class="upd-chg">' + (esc(info.changelog || '') || '（详见发布页）') + '</div>'
+      + (dlHtml ? '<h3>下载方式</h3>' + dlHtml : '')
+      + '<div class="hint">点“立即更新”在外部浏览器打开下载页，应用内不直接下载安装。</div></div>'
+      + '<div class="row"><button class="ghost" id="updSnooze">' + days + '天内不提醒</button>'
+      + '<button class="primary" id="updGo">立即更新</button></div>');
+    on(panel.querySelector('#updBaidu'), 'click', function () { copyText(baiduText); });
+    on(panel.querySelector('#updQuark'), 'click', function () { copyText(quarkText); });
+    on(panel.querySelector('#updAsset'), 'click', function () { openExternal(info.assetUrl || info.releaseUrl); });
+    on(panel.querySelector('#updSnooze'), 'click', function () {
+      if (root.NOVEL_UPDATE) root.NOVEL_UPDATE.snoozeNow();   // 冷却戳只写本机 localStorage，不上传
+      closeSheet('updateSheet');
+      App().toast(days + '天内不再提醒', 'ok');
+    });
+    // 主按钮不改“冷却”语义：只拉起外部下载页，弹层保持打开，用户可自行关闭
+    on(panel.querySelector('#updGo'), 'click', function () { openExternal(info.assetUrl || info.releaseUrl); });
   }
 
   function me(p) {
@@ -1131,13 +1311,18 @@
     var navHtml = ME_TABS.map(function (t) {
       return '<button class="vbtn' + (t.key === tab ? ' active' : '') + '" data-me-nav="' + t.key + '">' + esc(t.label) + '</button>';
     }).join('');
-    // 底部常驻居中“用户说明”入口（不属任何单页，点开 .sheet 弹层，不用原生弹窗）
+    // 底部常驻居中“用户说明”入口（不属任何单页，点开 .sheet 弹层，不用原生弹窗）；
+    // 旁侧“检查更新”（G1）：手动触发忽略冷却期，结果均有 toast，无新版本不弹窗
     screen().innerHTML = head('我的', '')
       + '<div class="vwrap"><nav class="vnav">' + navHtml + '</nav><div class="vpanel" id="meBody"></div></div>'
-      + '<div class="me-foot"><button id="userDocBtn">用户说明 · 隐私与免责</button></div>';
+      + '<div class="me-foot"><button id="userDocBtn">用户说明 · 隐私与免责</button><button id="checkUpdBtn">检查更新</button></div>';
     screen().classList.add('screen--dual');   // 双栏左右独立滚动（§4-D）
     wireBack();
     on(q('#userDocBtn'), 'click', openUserDoc);
+    on(q('#checkUpdBtn'), 'click', function () {
+      if (root.NOVEL_UPDATE && root.NOVEL_UPDATE.manualCheck) root.NOVEL_UPDATE.manualCheck();
+      else App().toast('更新检查模块未加载', 'bad');
+    });
     [].forEach.call(screen().querySelectorAll('[data-me-nav]'), function (b) {
       on(b, 'click', function () { App().go('#/me/' + b.getAttribute('data-me-nav')); });
     });
@@ -1146,6 +1331,7 @@
     else if (tab === 'appearance') renderMeAppearance(body);
     else if (tab === 'import') renderMeImport(body);
     else if (tab === 'feedback') renderMeFeedback(body);
+    else if (tab === 'sponsor') renderMeSponsor(body);
     else if (tab === 'data') renderMeData(body);
     else renderMeAi(body);
   }
@@ -1695,45 +1881,62 @@
     });
   }
 
-  /* ================= 问题反馈（建议 8）：邮箱展示/复制 + mailto 发信（不支持时降级复制） ================= */
+  /* ================= 问题反馈（建议 8）：邮箱展示 + 复制（10/26 待办：去反馈模板与发信，不再在 App 内填写） ================= */
   function renderMeFeedback(body) {
     body.innerHTML = '<div class="sec-head"><span class="st">问题反馈</span></div><div class="form">'
       + '<div class="note">欢迎提出建议或提交 bug。请附上版本号与复现步骤，方便定位；邮箱是唯一反馈渠道，响应不作时效承诺。</div>'
       + '<div class="fld"><label>开发者邮箱</label><div class="fb-mail" id="fbMailText">' + FEEDBACK_EMAIL + '</div></div>'
       + '<div class="row"><button id="fbCopy">复制邮箱</button></div>'
-      + '<h2 class="sec">反馈模板（可选，自动带入邮件正文）</h2>'
-      + '<div class="fld"><label>类型</label><select id="fbKind"><option>建议</option><option>bug</option></select></div>'
-      + '<div class="fld"><label>内容 / 复现步骤</label><textarea id="fbText" rows="4" placeholder="发生了什么？期望是什么？"></textarea></div>'
-      + '<div class="row"><button class="primary" id="fbCompose">生成邮件并发送</button></div>'
-      + '<div class="hint">机型/系统与 App 版本会自动附加。若本机未安装邮件应用，会降级为“已复制邮箱与内容，请手动发送”。</div>'
+      + '<div class="hint">复制邮箱后，请在邮件客户端中写明问题描述与复现步骤发送至开发者。</div>'
       + '</div>';
     on(q('#fbCopy'), 'click', function () { copyText(FEEDBACK_EMAIL); });
-    // mailto 拉起系统邮件 App；WebView 不支持时无法探测成败，统一先备一份剪贴板内容供手动粘贴
-    function openMailto(subject, content) {
-      copyText(FEEDBACK_EMAIL + '\n' + content);
-      try {
-        var a = root.document.createElement('a');
-        a.href = 'mailto:' + FEEDBACK_EMAIL + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(content);
-        root.document.body.appendChild(a); a.click(); root.document.body.removeChild(a);
-        App().toast('已拉起邮件（若无反应，邮箱与内容已复制，请手动发送）', 'ok');
-      } catch (e) {
-        App().toast('本机不支持直接发信：邮箱与内容已复制，请手动发送', 'warn');
-      }
-    }
-    on(q('#fbCompose'), 'click', function () {
-      var kind = q('#fbKind').value;
-      var txt = String(q('#fbText').value || '').trim();
-      if (!txt) { App().toast('请先填写反馈内容', 'warn'); return; }
-      var head2 = kind === 'bug'
-        ? '反馈类型：bug\nApp 版本：' + APP_VERSION + '\n机型/系统：' + deviceInfo() + '\n复现步骤与期望：'
-        : '反馈类型：建议\nApp 版本：' + APP_VERSION + '\n机型/系统：' + deviceInfo() + '\n建议内容：';
-      openMailto('[' + kind + '] AI 写作助手反馈', head2 + '\n' + txt);
-    });
   }
-  function deviceInfo() {
-    try { return String((root.navigator && root.navigator.userAgent) || '未知设备'); } catch (e) { return '未知设备'; }
+
+  /* ================= 赞助（待办 10/29）：爱发电主页 + 一键跳转 + 二维码；两条红线：功能零差异、不公示赞助人 ================= */
+  function renderMeSponsor(body) {
+    var qrBlock = SPONSOR_QR_READY
+      ? '<img class="qr-img" id="qrImg" src="' + SPONSOR_QR + '" alt="爱发电赞助二维码">'
+      : '<div class="qr-placeholder" id="qrImg">二维码待补充 · 暂用上方链接与一键跳转</div>';
+    body.innerHTML = '<div class="sec-head"><span class="st">赞助作者</span></div><div class="form">'
+      + '<div class="note">如果这个工具帮你少熬了几个改稿的夜，可以请作者喝杯咖啡。你的支持会变成作者继续维护的动力：让 bug 修复更快、新版本和新功能来得更早。</div>'
+      + '<div class="sp-card fld"><label>赞助主页（爱发电）</label>'
+      + '<div class="fb-mail sp-url">' + SPONSOR_URL + '</div>'
+      + '<div class="row"><button id="spCopy">复制赞助链接</button><button id="spOpen">一键跳转</button></div></div>'
+      + '<div class="sp-card fld"><label>赞助二维码</label>' + qrBlock
+      + '<div class="hint">长按识别，或截图后在微信/支付宝「扫一扫」中选相册图片</div></div>'
+      + '<div class="note">赞助完全自愿、金额不限，<b>不包含任何功能、权益、优先级服务或交付物</b>，也不构成消费合同关系；无法开票、不可退款。不赞助不影响任何功能，所有功能永久免费。</div>'
+      + '<div class="hint">本应用完全免费，赞助不包含任何功能、权益或交付物。</div>'
+      + '</div>';
+    on(q('#spCopy'), 'click', function () { copyText(SPONSOR_URL); });
+    on(q('#spOpen'), 'click', function () {
+      // 原生壳下 Capacitor 桥接层会把 window.open 转成系统 Intent 拉起外部浏览器（通常返回 null），不能据此判失败；
+      // 纯 Web 环境（浏览器预览/探针）才按返回值判弹窗被拦。失败必须给明确 toast，不得静默。
+      var w = null;
+      try { w = root.open(SPONSOR_URL, '_blank'); } catch (e) { w = null; }
+      var native = root.Capacitor && root.Capacitor.isNativePlatform && root.Capacitor.isNativePlatform();
+      if (!native && !w) App().toast('跳转失败，请用上方“复制赞助链接”在浏览器打开', 'bad');
+    });
+    on(q('#qrImg'), 'click', function () { if (SPONSOR_QR_READY) openSponsorQrSheet(); });
+    // 防御兜底：开关为 true 但图实际缺失/加载失败时，同尺寸切占位，版面不塌
+    var qrEl = q('#qrImg');
+    if (qrEl && qrEl.tagName === 'IMG') {
+      on(qrEl, 'error', function () {
+        var ph = root.document.createElement('div');
+        ph.className = 'qr-placeholder';
+        ph.textContent = '二维码待补充 · 暂用上方链接与一键跳转';
+        qrEl.parentNode.replaceChild(ph, qrEl);
+      });
+    }
+  }
+  // 二维码全屏放大（复用通用 .sheet 弹层，不用原生弹窗）
+  function openSponsorQrSheet() {
+    openSheet('qrSheet', '<div class="sh-title">爱发电赞助二维码</div>'
+      + '<div class="qr-view"><img class="qr-img qr-img--big" src="' + SPONSOR_QR + '" alt="二维码放大"></div>'
+      + '<div class="hint">长按识别，或截图后在微信/支付宝「扫一扫」中选相册图片</div>'
+      + '<div class="row"><button class="ghost" data-closesheet>关闭</button></div>');
   }
 
   root.NOVEL_VIEWS = { shelf: shelf, book: book, chapter: chapter, editor: editor, section: section, me: me,
-    BUILTIN: BUILTIN, ME_TABS: ME_TABS, FEEDBACK_EMAIL: FEEDBACK_EMAIL };
+    BUILTIN: BUILTIN, ME_TABS: ME_TABS, FEEDBACK_EMAIL: FEEDBACK_EMAIL, SPONSOR_URL: SPONSOR_URL,
+    showUpdateDialog: showUpdateDialog };
 })(globalThis);

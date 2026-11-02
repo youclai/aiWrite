@@ -1,8 +1,9 @@
 /* devtools-update-ch1-6.cjs —— 通过设备 App 自身的高层 DB API（与界面保存同一条代码路径），
-   把《勇者》第1章「童年的那顿饭」更新到本地文件夹的最新版本：
-   · 第1节（id=12）绝不动 —— 脚本全程不碰 section 12，结束后校验其 body_len/updated_at 未变；
-   · 第2、3节 —— saveSectionMeta(标题) + saveSectionBody(正文) 就地更新；
-   · 第4~6节 —— createSection + saveSectionBody 追加（idx 自动排在末尾）。
+   把《勇者》第1章「童年的那顿饭」同步到本地文件夹的最新版本。
+   节清单按目录自动扫描（C-第01章-第NN节-*.txt），新增节自动追加，无需改代码：
+   · 第1节（id=12）纹丝不动 —— 扫描时直接排除，结束后校验其 body_len/updated_at 未变；
+   · 目录里已有对应 idx 的节 —— saveSectionMeta(标题) + saveSectionBody(正文) 就地更新；
+   · 目录里新增的 idx —— createSection + saveSectionBody 追加（idx 自动排在末尾）。
    用法：
      node tests/devtools-update-ch1-6.cjs preflight   # 只解析+比对，不写库
      node tests/devtools-update-ch1-6.cjs doit        # 真正执行
@@ -13,13 +14,16 @@ const BASE = process.env.DEV_BASE || 'http://127.0.0.1:9222';
 const MODE = process.argv[2] || 'preflight';
 const DIR = 'd:/xh/C-新书/C-第01章-童年的那顿饭';
 const BOOK_ID = 5, CH_ID = 25, SEC1_ID = 12;
-const FILES = [
-  { idx: 2, name: 'C-第01章-第02节-东西是村长分的.txt' },
-  { idx: 3, name: 'C-第01章-第03节-孩子进教堂.txt' },
-  { idx: 4, name: 'C-第01章-第04节-门被砸.txt' },
-  { idx: 5, name: 'C-第01章-第05节-门开了.txt' },
-  { idx: 6, name: 'C-第01章-第06节-第二天天一亮.txt' }
-];
+
+// 扫描目录取除第1节以外的全部节文件，按节号排序
+function scanFiles() {
+  return fs.readdirSync(DIR)
+    .filter(n => /^C-第01章-第\d+节-.*\.txt$/.test(n))
+    .map(n => ({ name: n, idx: parseInt(n.match(/^C-第01章-第(\d+)节/)[1], 10) }))
+    .filter(f => f.idx > 1)
+    .sort((a, b) => a.idx - b.idx);
+}
+
 
 // 解析单文件：从"第N节"标题行拆出 title 与 body（标题行后整段为正文）
 function loadSec(name) {
@@ -33,7 +37,8 @@ function loadSec(name) {
   const body = lines.slice(k + 1).join('\n').replace(/\n{3,}/g, '\n\n').trim();
   return { title, body };
 }
-const SECS = FILES.map(f => ({ idx: f.idx, ...loadSec(f.name) }));
+const SECS = scanFiles().map(f => ({ idx: f.idx, ...loadSec(f.name) }));
+if (!SECS.length) { console.log('NO_SECTION_FILES_FOUND'); process.exit(6); }
 const payload = JSON.stringify({ secs: SECS, bookId: BOOK_ID, chId: CH_ID, sec1Id: SEC1_ID });
 
 const EXPR = `(async () => {
@@ -50,22 +55,31 @@ const EXPR = `(async () => {
   const secs = await DB.listSections(P.chId);
   out.beforeIdx = secs.map(s => s.idx + ':' + s.title);
   const byIdx = {}; secs.forEach(s => byIdx[s.idx] = s);
+  const norm = s => String(s || '').replace(/\\s+/g, '').length;
 
-  // 结构预演：2/3 更新（长度差），4~6 新建
+  // 结构预演：设备侧也按去空白长度比较（与 newLen 同口径），相同则 same 不写
   out.plan = [];
   for (const f of P.secs) {
     const cur = byIdx[f.idx];
     const fileLen = f.body.replace(/\\s+/g, '').length;
-    out.plan.push({ idx: f.idx, title: f.title, act: cur ? 'update' : 'create',
-      curLen: cur ? cur.body_len : 0, newLen: fileLen });
+    let act;
+    if (!cur) act = 'create';
+    else {
+      const curFull = await DB.getSection(cur.id);
+      act = norm(curFull.body) === fileLen ? 'same' : 'update';
+    }
+    out.plan.push({ idx: f.idx, title: f.title, act,
+      curLen: cur ? norm((await DB.getSection(cur.id)).body) : 0, newLen: fileLen });
   }
   if (MODE !== 'doit') return JSON.stringify(out);
 
-  // 逐项落库：走 App 自身 API
+  // 逐项落库：走 App 自身 API；same 的节不碰
   out.done = [];
   for (const f of P.secs) {
     const cur = byIdx[f.idx];
     if (cur) {
+      const full = await DB.getSection(cur.id);
+      if (norm(full.body) === f.body.replace(/\\s+/g, '').length) { out.done.push({ idx: f.idx, act: 'skip-same', id: cur.id }); continue; }
       await DB.saveSectionMeta(cur.id, { title: f.title });
       const words = await DB.saveSectionBody(cur.id, f.body);
       out.done.push({ idx: f.idx, act: 'update', id: cur.id, words });

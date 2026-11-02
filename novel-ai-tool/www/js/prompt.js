@@ -101,12 +101,13 @@
     }
     layers.setting = { text: settingText, removable: true };
 
-    var summaryText = useSummary && ctx.chapterSummary ? ('本章摘要：' + ctx.chapterSummary) : '';
+    // 摘要注入补全（10/26 待办 5c）：开关打开时无论有无源都占位，无源填“未提供”，让模型明确知道缺失
+    var summaryText = useSummary ? ('本章摘要：' + (ctx.chapterSummary || '未提供')) : '';
     if (useSummary && !ctx.chapterSummary) dropped.push('summary-absent');   // F31 延后：无源不报错
     layers.summary = { text: summaryText, removable: true };
 
-    if (st.inject_prev_summary && ctx.prevSummary) {
-      layers.prevSummary = { text: '上一章摘要：' + ctx.prevSummary, removable: true };
+    if (st.inject_prev_summary) {
+      layers.prevSummary = { text: '上一章摘要：' + (ctx.prevSummary || '未提供'), removable: true };
     }
 
     var matched = matchCharacters(ctx.characters, ctx.matchText || (selection + '\n' + (ctx.beforeText || '') + '\n' + (ctx.afterText || '')));

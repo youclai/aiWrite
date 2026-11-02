@@ -223,7 +223,7 @@
         self.state.report = rep; self.state.booted = true;
         if (!rep.ready) {
           // 浏览器预览无 SQLite：给出明确提示，不白屏
-          self.el.innerHTML = '<div class="wrap"><h1 class="ttl">AI 写作助手</h1><div class="err">数据层未就绪（'
+          self.el.innerHTML = '<div class="wrap"><h1 class="ttl">AI写</h1><div class="err">数据层未就绪（'
             + self.esc(rep.error || '浏览器预览无 SQLite') + '）。请在原生 APK 内使用；逻辑层可在电脑跑 tests/。</div></div>';
           return;
         }
@@ -234,6 +234,8 @@
         if (!root.location.hash) root.location.hash = '#/shelf';
         self.runPurge();   // 首屏渲染前触发一次到点真删（fire-and-forget，不阻塞渲染）
         self.render();
+        // 版本检查（G1）：首屏渲染后异步查 Gitee 最新 Release，仅提示更新；失败静默，绝不影响使用
+        if (root.NOVEL_UPDATE && root.NOVEL_UPDATE.checkOnBoot) root.NOVEL_UPDATE.checkOnBoot();
       });
     }
   };
