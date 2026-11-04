@@ -358,12 +358,24 @@
     });
   }
 
-  // 导出成功弹层（建议 4）：不再用瞬时 toast 收尾，明确告知格式/文件名清单/落点路径，
-  // 并提供“分享／保存到手机”（原生 Share+Filesystem 可用时）与“复制路径”后续动作。
+  // 导出成功弹层（建议 4）：明确告知格式/文件名清单/落点路径，
+  // 并提供“保存到手机”（原生 Share+Filesystem 可用时）与“复制路径”后续动作。
   // 落点口径与“存储”页一致：应用私有目录 / temp / export/。
   function nativeSharePlugins() {
     var P = root.Capacitor && root.Capacitor.Plugins;
     return (P && P.Share && P.Filesystem) ? { share: P.Share, fs: P.Filesystem } : null;
+  }
+  // 把 temp 相对路径解析为绝对 file:// URI：优先 stat.uri（已在 boot 适配器大量使用），兜底 getUri
+  function resolveFileUri(fs, relPath) {
+    return Promise.resolve(fs.stat({ path: relPath, directory: 'DATA' }))
+      .then(function (info) {
+        if (info && info.uri) return info;
+        return fs.getUri({ path: relPath, directory: 'DATA' });
+      })
+      .catch(function () {
+        // stat 失败时兜底再试 getUri（兼容旧版不返回 uri 的情况）
+        return fs.getUri({ path: relPath, directory: 'DATA' });
+      });
   }
   function showExportDone(bk, r) {
     var fmtName = { txt: '纯文本 txt', docx: 'Word docx', zip: '作品包 zip' }[r.format] || r.format;
@@ -373,27 +385,30 @@
           return '<li class="card"><div class="ct">' + esc(f.name) + '</div>'
             + '<div class="cs">' + esc(f.rel) + (f.bytes ? ' · ' + Math.max(1, Math.round(f.bytes / 1024)) + ' KB' : '') + '</div></li>';
         }).join('') + '</ul>'
-      + '<div class="note">文件落在<b>应用私有目录 / temp / export/</b>（即上方列表中的路径，相对应用数据根目录）。'
-      + '私有目录不向系统文件管理器开放，找不到文件属正常现象：请点“分享／保存到手机”写入手机存储，或复制路径在应用内查看。</div>'
+      + '<div class="note">文件暂存在应用私有目录中，系统文件管理器看不到。'
+      + '点“保存到手机”可选择存储位置（下载/文件/云盘等）。</div>'
       + '<div class="row">'
-      + (NS ? '<button class="primary" data-exshare>分享／保存到手机</button>' : '')
+      + (NS ? '<button class="primary" data-exshare>保存到手机</button>' : '')
       + '<button data-excopy>复制路径</button><button class="ghost" data-closesheet>知道了</button></div>'
-      + (NS ? '' : '<div class="hint">本机未接入原生分享，可先用“复制路径”记下位置，待原生层接入后可一键另存到手机。</div>');
+      + (NS ? '' : '<div class="hint">原生保存不可用，可先用"复制路径"记下位置。</div>');
     var panel = openSheet('exportDone', html);
     var firstRel = r.files.length ? r.files[0].rel : 'temp/export/';
     on(panel.querySelector('[data-excopy]'), 'click', function () { copyText(firstRel); });
     var sb = panel.querySelector('[data-exshare]');
-    on(sb, 'click', function () {
-      sb.disabled = true;
-      // temp 相对路径 → Filesystem.getUri 解析为绝对 file:// URI → 系统分享面板（可另存 Downloads/云盘）
-      Promise.all(r.files.map(function (f) { return NS.fs.getUri({ path: f.rel, directory: 'data' }); }))
-        .then(function (uris) {
-          return NS.share({ files: uris.map(function (u) { return u.uri; }), dialogTitle: '导出《' + (bk.title || '作品') + '》' });
-        })
-        .then(function () { sb.disabled = false; }, function (e) {
-          sb.disabled = false; App().toast('分享失败：' + ((e && e.message) || e) + '，可先复制路径', 'bad');
-        });
-    });
+    if (sb) {
+      on(sb, 'click', function () {
+        sb.disabled = true;
+        // 逐文件解析绝对 URI → 系统分享面板（用户可选"保存到文件/下载/云盘"等目标）
+        Promise.all(r.files.map(function (f) { return resolveFileUri(NS.fs, f.rel); }))
+          .then(function (results) {
+            return NS.share.share({ files: results.map(function (u) { return u.uri; }), dialogTitle: '保存《' + (bk.title || '作品') + '》' });
+          })
+          .then(function () { sb.disabled = false; }, function (e) {
+            sb.disabled = false;
+            App().toast('保存失败：' + ((e && e.message) || e), 'bad');
+          });
+      });
+    }
   }
 
   // 导出弹层（F41/42/44）：txt / docx / 作品包 zip；txt 可勾选同时出分章
@@ -822,7 +837,9 @@
               pvTitle.textContent = tpl.name + ' · 失败';
               pvBody.textContent = '';
               pvFoot.innerHTML = '<button data-retry>重试</button><button data-close>关闭</button>';
-              pvMeta.textContent = (res && res.reason) || '未知错误';
+              // 失败原因附原始回包头（2026-11-04）：“无报错但无内容”这类空结果能直接从界面看到模型发了什么
+              pvMeta.textContent = ((res && res.reason) || '未知错误')
+                + (res && res.rawHead ? '｜回包：' + res.rawHead : '');
               q('#pvFoot [data-close]') && on(q('#pvFoot [data-close]'), 'click', closePreview);
               on(q('#pvFoot [data-retry]'), 'click', function () { runAction(tpl, userHint); });
               return;
@@ -882,6 +899,7 @@
             book: book || { id: bookId }, chapter: ch, characters: characters, settings: ctx, prevSummary: prevSum,
             api: api, template: SUMMARY_TPL,
             selection: { start: 0, end: n, text: fullText }, before: '', after: '',
+            allowEmpty: true,   // 摘要可正当为空（空章/无事件）：不吃 session 的空结果守卫
             onDelta: function (txt, full) { pvBody.textContent = full; }
           };
           running = true;
@@ -1059,6 +1077,7 @@
             book: { id: bookId }, chapter: ch, characters: [], settings: qSettings, api: api, template: tpl,
             userHint: String(userHint || '').slice(0, 500),
             selection: { start: 0, end: 0, text: question }, before: '', after: '',
+            allowEmpty: true,   // 问答允许“没找到”这类空回：由界面自己显示“（无返回内容）”
             onDelta: function (txt, full) { pvBody.textContent = full; }
           };
           running = true;

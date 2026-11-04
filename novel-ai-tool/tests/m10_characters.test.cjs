@@ -34,11 +34,11 @@ function makeAdapter(d) {
   for (const f of ['schema.js', 'db.js', 'prompt.js']) new Function(sc(f))(G);
   const DB = G.NOVEL_DB, S = G.NOVEL_SCHEMA, P = G.NOVEL_PROMPT;
 
-  /* ============ C1 全新库直上 v7 ============ */
-  ok('C1 LATEST_VERSION=7', S.LATEST_VERSION === 7);
+  /* ============ C1 全新库直上最新（含 v7 characters）============ */
+  ok('C1 LATEST_VERSION=8', S.LATEST_VERSION === 8);
   let d = new DatabaseSync(':memory:');
   let info = await DB.init(makeAdapter(d));
-  eq('C1 全新库 toVersion=7', info.toVersion, 7);
+  eq('C1 全新库 toVersion=8', info.toVersion, 8);
   const cols = d.prepare('PRAGMA table_info(characters)').all().map(c => c.name);
   ok('C1 characters 有 gender 列', cols.includes('gender'));
   ok('C1 characters 有 age 列', cols.includes('age'));
@@ -64,9 +64,9 @@ function makeAdapter(d) {
   S.LATEST_VERSION = fullVer;
   const up = await DB.init(a);
   eq('C2 v6→v7 fromVersion', up.fromVersion, 6);
-  eq('C2 v6→v7 toVersion', up.toVersion, 7);
+  eq('C2 v6→v7→v8 toVersion', up.toVersion, 8);
   const again = await DB.init(a);   // 幂等：重复 init 不炸
-  eq('C2 重复 init 仍 7', again.toVersion, 7);
+  eq('C2 重复 init 仍 8', again.toVersion, 8);
   const oldRow = (await DB.listCharacters(bookId)).filter(c => c.id === oldId)[0];
   eq('C2 旧行 gender 默认空串', oldRow.gender, '');
   eq('C2 旧行 age 默认空串', oldRow.age, '');

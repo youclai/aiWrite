@@ -40,8 +40,8 @@ function mkAdapter(d) {
   log('== B1 schema v6 迁移 ==');
   let d = new DatabaseSync(':memory:');
   let info = await DB.init(mkAdapter(d));
-  eq('LATEST_VERSION=7', G.NOVEL_SCHEMA.LATEST_VERSION, 7);   // v7 加了 characters.gender/age，本套断言随最新号上调
-  eq('toVersion=7', info.toVersion, 7);
+  eq('LATEST_VERSION=8', G.NOVEL_SCHEMA.LATEST_VERSION, 8);   // v7 加 characters.gender/age，v8 加 ai_jobs.raw_head，本套断言随最新号上调
+  eq('toVersion=8', info.toVersion, 8);
   const cols = t => d.prepare(`PRAGMA table_info(${t})`).all().map(c => c.name);
   ok('books.deleted_at', cols('books').includes('deleted_at'));
   ok('chapters.deleted_at', cols('chapters').includes('deleted_at'));
@@ -50,7 +50,7 @@ function mkAdapter(d) {
   eq('三回收站索引存在', idx, ['idx_books_trash', 'idx_chapters_trash', 'idx_sections_trash']);
   // 幂等：重复 init 不报错、不重复 ADD COLUMN（迁移只在 version>from 执行）
   const info2 = await DB.init(mkAdapter(d));
-  eq('重复 init 幂等 toVersion 仍 7', info2.toVersion, 7);
+  eq('重复 init 幂等 toVersion 仍 8', info2.toVersion, 8);
   ok('重复 init 不崩', true);
   d.close();
 
@@ -71,7 +71,7 @@ function mkAdapter(d) {
   G.NOVEL_SCHEMA.LATEST_VERSION = fullVer;
   const infv6 = await DB.init(a5);
   eq('fromVersion=5', infv6.fromVersion, 5);
-  eq('升到最新 v7', infv6.toVersion, 7);
+  eq('升到最新 v8', infv6.toVersion, 8);
   ok('v6 后 books 有 deleted_at', d.prepare('PRAGMA table_info(books)').all().map(c => c.name).includes('deleted_at'));
   d.close();
 

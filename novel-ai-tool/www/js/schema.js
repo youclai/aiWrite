@@ -199,6 +199,17 @@
         { sql: "ALTER TABLE characters ADD COLUMN gender TEXT NOT NULL DEFAULT ''" },
         { sql: "ALTER TABLE characters ADD COLUMN age TEXT NOT NULL DEFAULT ''" }
       ]
+    },
+    {
+      // 2026-11-04「AI 执行无报错但无内容」修复之四：ai_jobs 多存一列模型原始回包头（截 200 字，只存头部不存全文，
+      // 避免大文本堵库/泄文），事后能区分“模型真的没回字（流式截断）”与“回了但不合契约被洗空”。
+      // 可空 TEXT：老行自动 NULL，无需回填；逐条单语句 up 以兼容真机 CapacitorSQLite 单语句迁移。
+      // 旧版 App 恢复本包会被备份版本闸（backup.js 铁律 3）拦住，属预期行为。
+      version: 8,
+      name: 'AI 任务：原始回包头部（raw_head）',
+      up: [
+        { sql: "ALTER TABLE ai_jobs ADD COLUMN raw_head TEXT NOT NULL DEFAULT ''" }
+      ]
     }
   ];
 

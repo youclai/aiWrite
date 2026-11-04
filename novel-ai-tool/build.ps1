@@ -1,11 +1,11 @@
 # Build entrypoint. NOTE: keep this file ASCII-only -- Windows PowerShell 5.1 reads
 # .ps1 without BOM as the local ANSI codepage, and multi-byte Chinese in string literals
 # breaks its tokenizer. Chinese comments are fine in .md/.js, not here.
-# Usage:  .\build.ps1              # sync www then assembleDebug
-#         .\build.ps1 -Task assembleRelease
+# Usage:  .\build.ps1              # sync www then assembleRelease
+#         .\build.ps1 -Task assembleDebug   # only for local debugging
 #         .\build.ps1 -SkipSync    # rebuild only
 param(
-    [string]$Task = 'assembleDebug',
+    [string]$Task = 'assembleRelease',
     [switch]$SkipSync
 )
 
@@ -31,7 +31,9 @@ try {
 } finally { Pop-Location }
 
 # Verify artifact: size + package + sdk levels + missing icon (aapt2 ships with build-tools)
-$Apk = Join-Path $Android 'app\build\outputs\apk\debug\app-debug.apk'
+# Release 构建检查 release APK；debug 构建检查 debug APK
+$variant = if ($Task -match 'Debug') { 'debug' } else { 'release' }
+$Apk = Join-Path $Android "app\build\outputs\apk\$variant\app-$variant.apk"
 if (Test-Path $Apk) {
     $fi = Get-Item $Apk
     Write-Output ('APK: ' + $fi.FullName)

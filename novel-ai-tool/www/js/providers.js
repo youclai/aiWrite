@@ -137,13 +137,15 @@
       buildRequest: function (prompt) {
         return { method: 'MOCK', url: '', headers: {}, body: '', prompt: prompt, mock: true };
       },
-      // 把 prompt 里"需要处理的内容"回一段假结果，并模拟真实模型的啰嗦包裹（引导语+外层引号），以便验证清洗闭环
-      // 引导语取动作无关的"处理结果"（不再硬编码"润色"，避免误导），仅 Node 测试用；真机已由 apiReady 门禁拦截 mock
+      // 把 prompt 里"需要处理的内容"回一段假结果，并模拟真实模型的啰嗦包裹（引导语 + 契约标签）：
+      // 引导语取动作无关的“处理结果”（不再硬编码"润色"，避免误导），仅 Node 测试用；真机已由 apiReady 门禁拦截 mock
+      // 2026-11-04：标签外保留客套与围栏，专门给 clean.js 的"确定性取内层 + 越格式回退"两条路径供样本；
+      // 但结果本体一律包进 <正文>…</正文>，与 prompt.js 的输出契约同形，避免 mock 与真模型行为分叉。
       mockReply: function (prompt) {
         var seg = String(prompt || '');
         var m = seg.match(/\[\u9700\u8981\u5904\u7406\u7684\u5185\u5bb9\]\n([\s\S]*?)(?:\n\[|$)/);
         var body = m ? m[1].trim() : seg.slice(-40);
-        return '\u597d\u7684\uff0c\u4ee5\u4e0b\u662f\u5904\u7406\u7ed3\u679c\uff1a\n\n\u201c' + body + '\u201d\n';
+        return '\u597d\u7684\uff0c\u4ee5\u4e0b\u662f\u5904\u7406\u7ed3\u679c\uff1a\n\n<\u6b63\u6587>' + body + '</\u6b63\u6587>\n';
       },
       parseLine: parseOpenAIBarLine,
       errorReason: errorReason

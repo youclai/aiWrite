@@ -59,7 +59,7 @@
     };
   }
 
-  // opts = {desc, prompt, key, system, transport, onDelta(text,full), onDone(full), onError(reason,full)}
+  // opts = {desc, prompt, key, system, transport, onDelta(text,full), onDone(full), onError(reason,full), onEmpty()}
   function run(opts) {
     opts = opts || {};
     var desc = opts.desc;
@@ -73,6 +73,10 @@
     var full = '', finished = false;
     function finish() {
       if (finished) return; finished = true;
+      /* 2026-11-04「无报错但无内容」修复之五：done 却一字未收到（原生只发了 done、
+         或事件乱序/丢失）旧行为是 onDone('') → session 判成功 → 界面空白。真服务下归为错误，
+         界面给可重试原因；mock 保留旧语义（空选段也允许跑通测试链路）。 */
+      if (!full && opts.onEmpty && opts.desc && opts.desc.style !== 'mock') { opts.onEmpty(); return; }
       if (opts.onDone) opts.onDone(full);
     }
     var handle = transport.request(req, {

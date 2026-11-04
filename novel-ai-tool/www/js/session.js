@@ -5,13 +5,18 @@
    - 结果只回 preview，绝不在此写正文；正文写回是 UI 调 NOVEL_DB.saveChapterBody 的事（那里面自动存快照）
    - auto_adopt 恒 false：本引擎不提供任何自动采纳路径
    - 失败不崩：网络/解析异常都 finishJob(failed) 并把可读原因回传，界面给重试
-   - 密钥运行时从 NOVEL_SECURE 取明文注入，session 不缓存、不落盘 */
+   - 密钥运行时从 NOVEL_SECURE 取明文注入，session 不缓存、不落盘
+
+   变更 2026-11-04（「AI 执行无报错但无内容」修复之三）：旧链路把“清洗后为空”当成功（status ok +
+   界面只一个关闭按钮），既不报错也无留痕，无法定位。现在：产出正文的动作若拿到空正文（只回了
+   空标签 / 完全没回字），一律记 finishJob(failed) 并回可重试异常，同时把模型原始回包头部落到
+   ai_jobs.raw_head；用户中途停止（stopped）仍按原约定交付已收片段，不归异常。 */
 (function (root) {
   'use strict';
 
   // deps = { db, prompt, providers, stream, clean, secure }
   // p = { book, chapter, characters, settings, api:{provider,base_url,model}, template,
-  //       selection:{start,end,text}, before, after, onDelta, transport, keyOverride }
+  //       selection:{start,end,text}, before, after, onDelta, transport, keyOverride, allowEmpty }
   function executeAction(deps, p) {
     var db = deps.db;
     var body = String(p.chapter && p.chapter.body || '');
@@ -69,6 +74,8 @@
             transport: p.transport,
             onDelta: p.onDelta,
             onDone: function (full) { if (!settled) { settled = true; resolve(full); } },
+            // 流正常结束却一字未收（真服务专属分支）：归为失败，不再交空串当成功
+            onEmpty: function () { if (!settled) { settled = true; reject('流式结束但未收到任何返回内容'); } },
             onError: function (reason, full) { if (!settled) { settled = true; reject(reason); } }
           });
           // 停止：取消传输后把已收到的片段当结果交付（界面可采纳部分），绝不悬挂
@@ -82,13 +89,34 @@
         });
       });
     }).then(function (raw) {
-      var cleaned = deps.clean.strip(raw);
+      // 统一走诊断清洗：除正文外还拿到“是否只回了空标签 / 回包头部”，用于把空结果归为可判定异常
+      var diag = (deps.clean && deps.clean.diagnose) ? deps.clean.diagnose(raw)
+        : { cleaned: deps.clean.strip(raw), emptyPairOnly: false, rawChars: String(raw || '').length,
+            head: (deps.clean.headSnippet || String)(raw || '') };
+      var cleaned = diag.cleaned;
       var outChars = Array.from(cleaned || '').length;
-      return db.finishJob(jobId, { status: 'ok', output_chars: outChars, error: stopped ? 'stopped-by-user' : '' }).then(function () {
+      var kind = (p.template && p.template.kind) || '';
+      // “产出正文”的动作才施空守卫；问答/摘要这类可正当返回空的由调用方 allowEmpty 显放行
+      var isContent = kind !== 'consistency' && kind !== 'query' && !p.allowEmpty;
+      var emptyResult = !stopped && isContent && (!outChars || diag.emptyPairOnly);
+      if (emptyResult) {
+        // 控制台留一份原始回包，真机 DevTools 可直接对比“模型发了什么 / 洗掉了什么”
+        try { if (root.console) root.console.warn('[session] 空结果 jobId=' + jobId + ' kind=' + kind +
+          ' rawChars=' + diag.rawChars + ' rawHead=' + diag.head); } catch (e) {}
+        return db.finishJob(jobId, { status: 'failed', output_chars: 0,
+          error: '模型未返回可用正文（回包 ' + diag.rawChars + ' 字：' + diag.head + '）',
+          raw_head: diag.head }).then(function () {
+          return { ok: false, jobId: jobId, empty: true, raw: raw, rawHead: diag.head, prompt: built.prompt,
+            reason: '模型未返回可用正文（可能只回了空标签或流式未收到内容），请重试或换个模型；' +
+              '回包摘录：' + diag.head };
+        });
+      }
+      return db.finishJob(jobId, { status: 'ok', output_chars: outChars,
+        error: stopped ? 'stopped-by-user' : '', raw_head: diag.head }).then(function () {
         return {
           ok: true, jobId: jobId, stopped: stopped,
           prompt: built.prompt, meta: built,
-          raw: raw, cleaned: cleaned,
+          raw: raw, rawHead: diag.head, cleaned: cleaned,
           selection: { start: s, end: e, text: selectionText }
         };
       });

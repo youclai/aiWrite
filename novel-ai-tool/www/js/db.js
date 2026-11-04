@@ -411,8 +411,10 @@
       Object.assign({ status: 'running', prompt_chars: 0, output_chars: 0, error: '' }, job));
   }
   function finishJob(id, patch) {
-    return run('UPDATE ai_jobs SET status=?, output_chars=?, error=?, finished_at=? WHERE id=?',
-      [patch.status, patch.output_chars || 0, patch.error || '', now(), id]);
+    // raw_head：模型原始回包头（2026-11-04 新增，诊断"无报错但无内容"）；未传则保留原值
+    return run('UPDATE ai_jobs SET status=?, output_chars=?, error=?, raw_head=COALESCE(?, raw_head), finished_at=? WHERE id=?',
+      [patch.status, patch.output_chars || 0, patch.error || '',
+       patch.raw_head == null ? null : String(patch.raw_head), now(), id]);
   }
   function listJobs(limit) {
     return all('SELECT * FROM ai_jobs ORDER BY id DESC LIMIT ?', [limit || 50]);
